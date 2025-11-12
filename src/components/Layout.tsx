@@ -14,7 +14,8 @@ import {
   Dumbbell,
   Sun,
   Moon,
-  Settings
+  Settings,
+  Rocket
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -31,7 +32,8 @@ const navigationItems = [
   { id: 'members' as NavigationItem, label: 'Members', icon: Users },
   { id: 'invoices' as NavigationItem, label: 'Invoices', icon: FileText },
   { id: 'plans' as NavigationItem, label: 'Plans', icon: Clipboard },
-  { id: 'reports' as NavigationItem, label: 'Reports', icon: BarChart3 },
+  { id: 'membership' as NavigationItem, label: 'Membership', icon: Rocket },
+  // { id: 'reports' as NavigationItem, label: 'Reports', icon: BarChart3 },
   { id: 'communication' as NavigationItem, label: 'Messages', icon: MessageSquare },
   { id: 'settings' as NavigationItem, label: 'Settings', icon: Settings },
 ];

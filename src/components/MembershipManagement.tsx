@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+// src/pages/membership/MembershipManagement.tsx
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -9,10 +10,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Textarea } from './ui/textarea';
-import { 
-  Search, 
-  Plus, 
-  Filter, 
+import {
+  Search,
+  Plus,
+  Filter,
   Calendar,
   Phone,
   Mail,
@@ -22,17 +23,22 @@ import {
   Save,
   X
 } from 'lucide-react';
+import { toast } from 'sonner';
+import memberService from '../service/memberService.js';
+import uploadService from '../service/uploadService.js';
+import membermembershipService from '../service/membermembershipService.js';
+import membershipService from '../service/membershipService.js';
 
 interface Member {
   id: string;
   name: string;
   email: string;
   phone: string;
-  planType: string;
-  startDate: string;
-  endDate: string;
+  planType?: string;
+  startDate?: string;
+  endDate?: string;
   status: 'active' | 'expired' | 'pending';
-  amount: number;
+  amount?: number;
   photo?: string;
   address?: string;
   emergencyContact?: string;
@@ -40,108 +46,31 @@ interface Member {
   lastPayment?: string;
   nextBilling?: string;
   notes?: string;
+  // optional backend audit / extra fields
+  is_active?: boolean;
+  created_by_name?: string;
+  createdAt?: string;
+  workout_batch?: string;
+  gender?: 'Male' | 'Female';
+  dob?: string;
 }
-
-const mockMembers: Member[] = [
-  {
-    id: '1',
-    name: 'John Smith',
-    email: 'john.smith@email.com',
-    phone: '+1 (555) 123-4567',
-    planType: 'Premium Annual',
-    startDate: '2024-01-15',
-    endDate: '2025-01-15',
-    status: 'active',
-    amount: 1200,
-    address: '123 Main St, City, State 12345',
-    emergencyContact: '+1 (555) 123-4568',
-    joinDate: '2024-01-15',
-    lastPayment: '2024-01-15',
-    nextBilling: '2025-01-15',
-    notes: 'Prefers evening workouts'
-  },
-  {
-    id: '2',
-    name: 'Sarah Johnson',
-    email: 'sarah.j@email.com',
-    phone: '+1 (555) 234-5678',
-    planType: 'Monthly Basic',
-    startDate: '2024-02-01',
-    endDate: '2024-03-01',
-    status: 'expired',
-    amount: 80,
-    address: '456 Oak Ave, City, State 12345',
-    emergencyContact: '+1 (555) 234-5679',
-    joinDate: '2024-02-01',
-    lastPayment: '2024-02-01',
-    nextBilling: '2024-03-01',
-    notes: 'Needs membership renewal reminder'
-  },
-  {
-    id: '3',
-    name: 'Mike Wilson',
-    email: 'mike.wilson@email.com',
-    phone: '+1 (555) 345-6789',
-    planType: 'Premium Monthly',
-    startDate: '2024-02-15',
-    endDate: '2024-03-15',
-    status: 'pending',
-    amount: 150,
-    address: '789 Pine St, City, State 12345',
-    emergencyContact: '+1 (555) 345-6790',
-    joinDate: '2024-02-15',
-    lastPayment: '2024-02-15',
-    nextBilling: '2024-03-15',
-    notes: 'Payment pending verification'
-  },
-  {
-    id: '4',
-    name: 'Emily Davis',
-    email: 'emily.davis@email.com',
-    phone: '+1 (555) 456-7890',
-    planType: 'Basic Annual',
-    startDate: '2024-01-01',
-    endDate: '2025-01-01',
-    status: 'active',
-    amount: 800,
-    address: '321 Elm St, City, State 12345',
-    emergencyContact: '+1 (555) 456-7891',
-    joinDate: '2024-01-01',
-    lastPayment: '2024-01-01',
-    nextBilling: '2025-01-01',
-    notes: 'Personal trainer sessions on weekends'
-  },
-  {
-    id: '5',
-    name: 'Alex Brown',
-    email: 'alex.brown@email.com',
-    phone: '+1 (555) 567-8901',
-    planType: 'Premium Monthly',
-    startDate: '2024-02-20',
-    endDate: '2024-03-20',
-    status: 'active',
-    amount: 150,
-    address: '654 Maple Dr, City, State 12345',
-    emergencyContact: '+1 (555) 567-8902',
-    joinDate: '2024-02-20',
-    lastPayment: '2024-02-20',
-    nextBilling: '2024-03-20',
-    notes: 'Interested in group fitness classes'
-  }
-];
 
 export function MembershipManagement() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
-  const [newMember, setNewMember] = useState({
+  const [newMember, setNewMember] = useState<any>({
     name: '',
     email: '',
     phone: '',
-    planType: '',
     startDate: '',
     amount: '',
-    photo: ''
+    photo: '',
+    batch: '',
+    joinDate: '',
+    gender: '',
+    dob: '',
+    notes: ''
   });
 
   // Member profile dialog state
@@ -154,9 +83,372 @@ export function MembershipManagement() {
   const [isBillingOpen, setIsBillingOpen] = useState(false);
   const [billingMember, setBillingMember] = useState<Member | null>(null);
 
-  const filteredMembers = mockMembers.filter(member => {
+  // API-driven members state (default to mock to avoid blank UI)
+  const [members, setMembers] = useState<Member[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false); // new state for image upload
+
+  // NEW: member-membership related state used when viewing billing
+  const [memberMemberships, setMemberMemberships] = useState<any[]>([]);
+  const [membershipLoading, setMembershipLoading] = useState(false);
+
+  // NEW: membership plans (options) for selection when assigning membership
+  const [membershipOptions, setMembershipOptions] = useState<any[]>([]);
+  const [membershipOptionsLoading, setMembershipOptionsLoading] = useState(false);
+
+  // NEW: Assign membership dialog state
+  const [isAssignOpen, setIsAssignOpen] = useState(false);
+  const [assignMember, setAssignMember] = useState<Member | null>(null);
+  const [selectedMembershipId, setSelectedMembershipId] = useState('');
+  const [assignStart, setAssignStart] = useState(''); // yyyy-mm-dd
+  const [assignEnd, setAssignEnd] = useState(''); // yyyy-mm-dd
+  const [assignPaymentStatus, setAssignPaymentStatus] = useState<'paid' | 'unpaid'>('paid');
+  const [assignStatus, setAssignStatus] = useState<'active' | 'expired' | 'cancelled'>('active');
+  const [assignLoading, setAssignLoading] = useState(false);
+
+  // ----- Helpers -----
+  const extractListFromResponse = (res: any): any[] => {
+    if (!res) return [];
+    if (Array.isArray(res)) return res;
+    if (Array.isArray(res.data)) return res.data;
+    if (Array.isArray(res.data?.data)) return res.data.data;
+    if (Array.isArray(res.rows)) return res.rows;
+    if (Array.isArray(res.data?.rows)) return res.data.rows;
+    return [];
+  };
+
+  // map backend member -> UI Member (safe defaults)
+  const mapBackendToMember = (item: any): Member => {
+    const amount = item.membership?.price ? Number(item.membership.price) : (item.amount ? Number(item.amount) : 0);
+    const startDate = item.start_date || item.startDate || item.join_date || item.joinDate || '';
+    const endDate = item.end_date || item.endDate || '';
+    const isActive = typeof item.is_active !== 'undefined' ? item.is_active : (item.status === 'active');
+
+    const status: Member['status'] = isActive ? 'active' : (item.status as Member['status'] || 'expired');
+
+    return {
+      id: item.id,
+      name: item.name || item.full_name || 'Unknown',
+      email: item.email || '',
+      phone: item.phone || '',
+      startDate,
+      endDate,
+      status,
+      amount,
+      photo: item.image_url || item.photo || undefined,
+      address: item.address || undefined,
+      emergencyContact: item.emergency_contact || item.emergencyContact || undefined,
+      joinDate: item.join_date || item.joinDate || undefined,
+      lastPayment: item.lastPayment || item.last_payment || undefined,
+      nextBilling: item.nextBilling || item.next_billing || undefined,
+      notes: item.notes || item.description || undefined,
+      is_active: isActive,
+      created_by_name: item.created_by_name || item.createdByName || undefined,
+      createdAt: item.createdAt || item.created_at || undefined,
+      workout_batch: item.workout_batch || item.workoutBatch || undefined,
+      gender: item.gender || undefined,
+      dob: item.dob || undefined
+    };
+  };
+
+  // ----- Load members from API -----
+  useEffect(() => {
+    const fetchMembers = async () => {
+      setLoading(true);
+      try {
+        const response = await memberService.getMembers({ page: 1, limit: 200 });
+        const list = extractListFromResponse(response);
+        if (list.length > 0) {
+          const mapped = list.map(mapBackendToMember);
+          setMembers(mapped);
+        } else {
+          setMembers(list.length === 0 ? [] : list.map(mapBackendToMember));
+        }
+      } catch (err: any) {
+        console.error('Failed to fetch members', err);
+        toast.error(err?.message || 'Failed to load members');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchMembers();
+  }, []);
+
+  // ----- Load membership plans for "Assign membership" select -----
+  useEffect(() => {
+    const fetchMemberships = async () => {
+      setMembershipOptionsLoading(true);
+      try {
+        const res = await membershipService.getMemberships({ page: 1, limit: 200 });
+        const list = extractListFromResponse(res);
+        setMembershipOptions(list);
+      } catch (err: any) {
+        console.error('Failed to fetch membership options', err);
+      } finally {
+        setMembershipOptionsLoading(false);
+      }
+    };
+    fetchMemberships();
+  }, []);
+
+  // ---------- Image upload helper ----------
+  const uploadAndSetPhoto = async (file: File | null) => {
+    if (!file) return;
+    try {
+      setImageUploading(true);
+      const url = await uploadService.handleImageUpload(file);
+      setNewMember((prev:any) => ({ ...prev, photo: url }));
+      toast.success('Image uploaded');
+    } catch (err: any) {
+      console.error('Image upload failed', err);
+      toast.error(err?.message || 'Image upload failed');
+    } finally {
+      setImageUploading(false);
+    }
+  };
+
+  // Add member (calls service, then updates UI)
+  const handleAddMember = async () => {
+    if (!newMember.name || !newMember.email) {
+      toast.error('Name and email are required');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      // Build payload following createMemberSchema
+      const payload: any = {
+        name: newMember.name,
+        email: newMember.email,
+        phone: newMember.phone || undefined,
+        gender: newMember.gender || undefined,
+        dob: newMember.dob ? new Date(newMember.dob).toISOString() : undefined,
+        join_date: newMember.joinDate ? new Date(newMember.joinDate).toISOString() : undefined,
+        start_date: newMember.startDate ? new Date(newMember.startDate).toISOString() : undefined,
+        workout_batch: newMember.batch || undefined,
+        image_url: newMember.photo || undefined, // <-- only URL goes here
+        is_active: typeof newMember.is_active !== 'undefined' ? newMember.is_active : true,
+        notes: newMember.notes || undefined
+      };
+
+      // Remove undefined keys to keep payload clean
+      Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
+
+      const createdRes = await memberService.createMember(payload);
+      const createdItem = (createdRes && (createdRes.data || createdRes)) || createdRes;
+      const mapped = mapBackendToMember(createdItem);
+      setMembers((prev) => [...prev, mapped]);
+      toast.success('Member added');
+      setIsAddMemberOpen(false);
+      setNewMember({ name: '', email: '', phone: '', startDate: '', amount: '', photo: '', batch: '', joinDate: '', gender: '', dob: '', notes: '' });
+    } catch (err: any) {
+      console.error('Add member error', err);
+      toast.error(err?.message || 'Failed to add member');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // View profile
+  const handleViewProfile = (member: Member) => {
+    setSelectedMember(member);
+    setEditedMember({ ...member });
+    setIsEditing(false);
+    setIsProfileOpen(true);
+  };
+
+  const handleEditProfile = () => setIsEditing(true);
+
+  const handleCancelEdit = () => {
+    if (selectedMember) {
+      setEditedMember({ ...selectedMember });
+      setIsEditing(false);
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    if (!editedMember) return;
+    try {
+      setLoading(true);
+      // Build payload following updateMemberSchema
+      const payload: any = {
+        name: editedMember.name,
+        email: editedMember.email,
+        phone: editedMember.phone || undefined,
+        start_date: editedMember.startDate ? new Date(editedMember.startDate).toISOString() : undefined,
+        join_date: editedMember.joinDate ? new Date(editedMember.joinDate).toISOString() : undefined,
+        workout_batch: editedMember.workout_batch || editedMember['batch'] || undefined,
+        image_url: editedMember.photo || undefined,
+        is_active: typeof editedMember.is_active !== 'undefined' ? editedMember.is_active : undefined,
+        notes: editedMember.notes || undefined,
+        gender: editedMember.gender || undefined,
+        dob: editedMember.dob ? new Date(editedMember.dob).toISOString() : undefined
+      };
+
+      // strip undefined
+      Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
+
+      await memberService.updateMember(editedMember.id, payload);
+      setMembers((prev) => prev.map((m) => (m.id === editedMember.id ? { ...m, ...editedMember } : m)));
+      setSelectedMember(editedMember);
+      setIsEditing(false);
+      toast.success('Member updated');
+    } catch (err: any) {
+      console.error('Update member failed', err);
+      toast.error(err?.message || 'Failed to update member');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Delete (soft delete) member
+  const handleDelete = async (id: string) => {
+    try {
+      setLoading(true);
+      await memberService.deleteMember(id);
+      setMembers((prev) => prev.map((m) => (m.id === id ? { ...m, is_active: false, status: 'expired' } : m)));
+      toast.success('Member deactivated');
+    } catch (err: any) {
+      console.error('Delete member failed', err);
+      toast.error(err?.message || 'Failed to delete member');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Restore member (when previously soft-deleted)
+  const handleRestore = async (id: string) => {
+    try {
+      setLoading(true);
+      await memberService.restoreMember(id);
+      setMembers((prev) => prev.map((m) => (m.id === id ? { ...m, is_active: true, status: 'active' } : m)));
+      toast.success('Member restored');
+    } catch (err: any) {
+      console.error('Restore failed', err);
+      toast.error(err?.message || 'Failed to restore member');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // NEW: open assign membership dialog for a member
+  const openAssignDialog = (member: Member) => {
+    setAssignMember(member);
+    // default dates: start = today, end = +30 days
+    const today = new Date();
+    const endDefault = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    setAssignStart(today.toISOString().slice(0, 10));
+    setAssignEnd(endDefault.toISOString().slice(0, 10));
+    setSelectedMembershipId('');
+    setAssignPaymentStatus('paid');
+    setAssignStatus('active');
+    setIsAssignOpen(true);
+  };
+
+  // NEW: submit assign
+  const handleAssignSubmit = async () => {
+    if (!assignMember) {
+      toast.error('No member selected');
+      return;
+    }
+    if (!selectedMembershipId) {
+      toast.error('Please select a membership plan');
+      return;
+    }
+    if (!assignStart || !assignEnd) {
+      toast.error('Please provide start and end dates');
+      return;
+    }
+
+    try {
+      setAssignLoading(true);
+      const payload: any = {
+        member_id: assignMember.id,
+        membership_id: selectedMembershipId,
+        start_date: new Date(assignStart).toISOString(),
+        end_date: new Date(assignEnd).toISOString(),
+        payment_status: assignPaymentStatus, // 'paid' | 'unpaid'
+        status: assignStatus // 'active' | 'expired' | 'cancelled'
+      };
+
+      const res = await membermembershipService.createMemberMembership(payload);
+      toast.success('Membership assigned successfully');
+
+      // reload list for billing view (if billingMember is same)
+      if (assignMember && billingMember && assignMember.id === billingMember.id) {
+        try {
+          setMembershipLoading(true);
+          const listRes = await membermembershipService.getAllMemberMemberships({ member_id: billingMember.id, limit: 50 });
+          const list = extractListFromResponse(listRes);
+          const normalized = list.map((itm: any) => ({
+            id: itm.id,
+            membership_name: itm.membership?.name || itm.membership_name || itm.membershipId || (itm.membership_id || ''),
+            start_date: itm.start_date || itm.startDate || null,
+            end_date: itm.end_date || itm.endDate || null,
+            payment_status: itm.payment_status || itm.paymentStatus || null,
+            status: itm.status || null,
+          }));
+          setMemberMemberships(normalized);
+        } catch (err) {
+          console.error('Reload memberships failed', err);
+        } finally {
+          setMembershipLoading(false);
+        }
+      }
+
+      setIsAssignOpen(false);
+    } catch (err: any) {
+      console.error('Assign membership failed', err);
+      toast.error(err?.message || 'Failed to assign membership');
+    } finally {
+      setAssignLoading(false);
+    }
+  };
+
+  // NEW: load member-membership relations when opening billing view
+  const handleViewBilling = async (member: Member) => {
+    setBillingMember(member);
+    setIsBillingOpen(true);
+
+    // fetch member-membership relations for this member
+    try {
+      setMembershipLoading(true);
+      setMemberMemberships([]);
+      // use service; filter by member_id (backend supports filters)
+      const res = await membermembershipService.getAllMemberMemberships({ member_id: member.id, limit: 50 });
+      const list = extractListFromResponse(res);
+
+      // normalize list to display
+      const normalized = list.map((itm: any) => ({
+        id: itm.id,
+        membership_name: itm.membership?.name || itm.membership_name || itm.membershipId || (itm.membership_id || ''),
+        start_date: itm.start_date || itm.startDate || null,
+        end_date: itm.end_date || itm.endDate || null,
+        payment_status: itm.payment_status || itm.paymentStatus || null,
+        status: itm.status || null,
+      }));
+
+      setMemberMemberships(normalized);
+    } catch (err: any) {
+      console.error('Failed to load member memberships', err);
+      toast.error(err?.message || 'Failed to load memberships for this member');
+      setMemberMemberships([]);
+    } finally {
+      setMembershipLoading(false);
+    }
+  };
+
+  const handleUpdatePayment = () => {
+    console.log('Process payment for:', billingMember?.name);
+    setIsBillingOpen(false);
+    toast.success('Payment processed (mock)');
+  };
+
+  // Filter & search derived members
+  const filteredMembers = members.filter(member => {
     const matchesSearch = member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         member.email.toLowerCase().includes(searchTerm.toLowerCase());
+                         (member.email || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesFilter = selectedFilter === 'all' || member.status === selectedFilter;
     return matchesSearch && matchesFilter;
   });
@@ -174,67 +466,22 @@ export function MembershipManagement() {
     }
   };
 
-  const handleAddMember = () => {
-    // In a real app, this would make an API call
-    console.log('Adding new member:', newMember);
-    setIsAddMemberOpen(false);
-    setNewMember({ name: '', email: '', phone: '', planType: '', startDate: '', amount: '', photo: '' });
-  };
-
-  const handleViewProfile = (member: Member) => {
-    setSelectedMember(member);
-    setEditedMember({ ...member });
-    setIsEditing(false);
-    setIsProfileOpen(true);
-  };
-
-  const handleEditProfile = () => {
-    setIsEditing(true);
-  };
-
-  const handleSaveProfile = () => {
-    if (editedMember) {
-      // In a real app, this would make an API call
-      console.log('Saving member profile:', editedMember);
-      setSelectedMember(editedMember);
-      setIsEditing(false);
-      // Here you would typically update the member in your state/database
-    }
-  };
-
-  const handleCancelEdit = () => {
-    if (selectedMember) {
-      setEditedMember({ ...selectedMember });
-      setIsEditing(false);
-    }
-  };
-
-  const handleViewBilling = (member: Member) => {
-    setBillingMember(member);
-    setIsBillingOpen(true);
-  };
-
-  const handleUpdatePayment = () => {
-    // In a real app, this would process payment
-    console.log('Processing payment for:', billingMember?.name);
-    setIsBillingOpen(false);
-  };
-
   const memberCounts = {
-    all: mockMembers.length,
-    active: mockMembers.filter(m => m.status === 'active').length,
-    expired: mockMembers.filter(m => m.status === 'expired').length,
-    pending: mockMembers.filter(m => m.status === 'pending').length
+    all: members.length,
+    active: members.filter(m => m.status === 'active').length,
+    expired: members.filter(m => m.status === 'expired').length,
+    pending: members.filter(m => m.status === 'pending').length
   };
 
   return (
     <div className="space-y-6">
+      {/* top area unchanged */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl mb-2">Membership Management</h1>
           <p className="text-muted-foreground">Manage gym members, plans, and renewals</p>
         </div>
-        
+        {/* Add member dialog trigger unchanged */}
         <Dialog open={isAddMemberOpen} onOpenChange={setIsAddMemberOpen}>
           <DialogTrigger asChild>
             <Button className="bg-gradient-to-r from-neon-green to-neon-blue text-white w-full sm:w-auto">
@@ -243,6 +490,8 @@ export function MembershipManagement() {
               <span className="sm:hidden">Add Member</span>
             </Button>
           </DialogTrigger>
+
+          {/* DialogContent made scrollable with max height */}
           <DialogContent className="w-[95vw] max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl max-h-[90vh] overflow-y-auto mx-4 sm:mx-0">
             <DialogHeader className="px-1 sm:px-0">
               <DialogTitle className="text-lg sm:text-xl">Add New Member</DialogTitle>
@@ -260,29 +509,28 @@ export function MembershipManagement() {
                     type="file"
                     accept="image/*"
                     capture="user"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        const reader = new FileReader();
-                        reader.onload = (event) => {
-                          setNewMember({...newMember, photo: event.target?.result as string});
-                        };
-                        reader.readAsDataURL(file);
-                      }
+                    onChange={async (e: any) => {
+                      const file = e.target.files?.[0] || null;
+                      if (!file) return;
+                      // Upload file to your upload endpoint and set the returned URL
+                      await uploadAndSetPhoto(file);
                     }}
                     className="cursor-pointer text-sm"
+                    disabled={imageUploading}
                   />
-                  {newMember.photo && (
+                  {imageUploading ? (
+                    <div className="text-xs text-muted-foreground">Uploading image...</div>
+                  ) : newMember.photo ? (
                     <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-lg overflow-hidden border-2 border-neon-green mx-auto sm:mx-0">
-                      <img 
-                        src={newMember.photo} 
-                        alt="Member preview" 
+                      <img
+                        src={newMember.photo}
+                        alt="Member preview"
                         className="w-full h-full object-cover"
                       />
                     </div>
-                  )}
+                  ) : null}
                   <p className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
-                    Upload a photo or use camera to capture member's image
+                    Upload a photo or use camera to capture member's image (only URL is saved)
                   </p>
                 </div>
               </div>
@@ -299,7 +547,7 @@ export function MembershipManagement() {
                     className="text-sm sm:text-base"
                   />
                 </div>
-                
+
                 <div className="grid gap-2">
                   <Label htmlFor="email" className="text-sm sm:text-base">Email</Label>
                   <Input
@@ -311,7 +559,7 @@ export function MembershipManagement() {
                     className="text-sm sm:text-base"
                   />
                 </div>
-                
+
                 <div className="grid gap-2">
                   <Label htmlFor="phone" className="text-sm sm:text-base">Phone</Label>
                   <Input
@@ -321,37 +569,6 @@ export function MembershipManagement() {
                     placeholder="+1 (555) 123-4567"
                     className="text-sm sm:text-base"
                   />
-                </div>
-              </div>
-
-              {/* Plan and Batch Information */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="planType" className="text-sm sm:text-base">Plan Type</Label>
-                  <Select value={newMember.planType} onValueChange={(value) => setNewMember({...newMember, planType: value})}>
-                    <SelectTrigger className="text-sm sm:text-base">
-                      <SelectValue placeholder="Select a plan" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="basic-monthly" className="text-sm">Basic Monthly - $80</SelectItem>
-                      <SelectItem value="premium-monthly" className="text-sm">Premium Monthly - $150</SelectItem>
-                      <SelectItem value="basic-annual" className="text-sm">Basic Annual - $800</SelectItem>
-                      <SelectItem value="premium-annual" className="text-sm">Premium Annual - $1200</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div className="grid gap-2">
-                  <Label htmlFor="batch" className="text-sm sm:text-base">Workout Batch</Label>
-                  <Select value={newMember.batch || ''} onValueChange={(value) => setNewMember({...newMember, batch: value})}>
-                    <SelectTrigger className="text-sm sm:text-base">
-                      <SelectValue placeholder="Select workout batch" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="morning" className="text-sm">Morning Batch (6:00 AM - 12:00 PM)</SelectItem>
-                      <SelectItem value="evening" className="text-sm">Evening Batch (4:00 PM - 10:00 PM)</SelectItem>
-                    </SelectContent>
-                  </Select>
                 </div>
               </div>
 
@@ -367,23 +584,24 @@ export function MembershipManagement() {
                 />
               </div>
             </div>
-            
+
             <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-0 px-1 sm:px-0">
-              <Button 
-                type="submit" 
-                onClick={handleAddMember} 
+              <Button
+                type="submit"
+                onClick={handleAddMember}
                 className="w-full sm:w-auto bg-gradient-to-r from-neon-green to-neon-blue text-white order-2 sm:order-1"
+                disabled={loading || imageUploading}
               >
-                Add Member
+                {loading ? 'Saving...' : 'Add Member'}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* Member Profile Dialog */}
+      {/* Member Profile Dialog (scrollable) */}
       <Dialog open={isProfileOpen} onOpenChange={setIsProfileOpen}>
-        <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[600px] max-w-[95vw] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
               Member Profile
@@ -403,9 +621,9 @@ export function MembershipManagement() {
               {isEditing ? 'Edit member information' : 'View member details and information'}
             </DialogDescription>
           </DialogHeader>
-          
+
           {selectedMember && editedMember && (
-            <div className="grid gap-6 py-4">
+            <div className="grid gap-6 py-4 px-1 sm:px-2">
               {/* Member Photo and Basic Info */}
               <div className="flex items-start gap-4">
                 <div className="w-20 h-20 bg-gradient-to-r from-neon-green to-neon-blue rounded-full flex items-center justify-center text-white text-xl">
@@ -486,34 +704,16 @@ export function MembershipManagement() {
                 <h4 className="font-medium">Membership Information</h4>
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div>
-                    <Label>Plan Type</Label>
-                    {isEditing ? (
-                      <Select value={editedMember.planType} onValueChange={(value) => setEditedMember({...editedMember, planType: value})}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Basic Monthly">Basic Monthly</SelectItem>
-                          <SelectItem value="Premium Monthly">Premium Monthly</SelectItem>
-                          <SelectItem value="Basic Annual">Basic Annual</SelectItem>
-                          <SelectItem value="Premium Annual">Premium Annual</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">{selectedMember.planType}</p>
-                    )}
-                  </div>
-                  <div>
                     <Label>Amount</Label>
-                    <p className="text-sm text-muted-foreground">${selectedMember.amount}</p>
+                    <p className="text-sm text-neon-green font-medium">${selectedMember.amount}</p>
                   </div>
                   <div>
                     <Label>Start Date</Label>
-                    <p className="text-sm text-muted-foreground">{new Date(selectedMember.startDate).toLocaleDateString()}</p>
+                    <p className="text-sm text-muted-foreground">{selectedMember.startDate ? new Date(selectedMember.startDate).toLocaleDateString() : 'N/A'}</p>
                   </div>
                   <div>
                     <Label>End Date</Label>
-                    <p className="text-sm text-muted-foreground">{new Date(selectedMember.endDate).toLocaleDateString()}</p>
+                    <p className="text-sm text-muted-foreground">{selectedMember.endDate ? new Date(selectedMember.endDate).toLocaleDateString() : 'N/A'}</p>
                   </div>
                   <div>
                     <Label>Join Date</Label>
@@ -550,7 +750,7 @@ export function MembershipManagement() {
                   <X className="w-4 h-4 mr-2" />
                   Cancel
                 </Button>
-                <Button onClick={handleSaveProfile} className="bg-gradient-to-r from-neon-green to-neon-blue text-white">
+                <Button onClick={handleSaveProfile} className="bg-gradient-to-r from-neon-green to-neon-blue text-white" disabled={loading}>
                   <Save className="w-4 h-4 mr-2" />
                   Save Changes
                 </Button>
@@ -564,18 +764,88 @@ export function MembershipManagement() {
         </DialogContent>
       </Dialog>
 
-      {/* Billing Management Dialog */}
+      {/* Assign Membership Dialog (scrollable) */}
+      <Dialog open={isAssignOpen} onOpenChange={setIsAssignOpen}>
+        <DialogContent className="sm:max-w-[520px] max-w-[95vw] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Assign Membership</DialogTitle>
+            <DialogDescription>
+              Assign a membership plan to {assignMember?.name}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4 px-1 sm:px-2">
+            <div>
+              <Label>Membership Plan</Label>
+              <Select value={selectedMembershipId} onValueChange={setSelectedMembershipId}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder={membershipOptionsLoading ? 'Loading...' : 'Select plan'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {membershipOptions.map((m: any) => (
+                    <SelectItem key={m.id} value={m.id}>{m.name} {m.price ? `- $${m.price}` : ''}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label>Start Date</Label>
+                <Input type="date" value={assignStart} onChange={(e) => setAssignStart(e.target.value)} />
+              </div>
+              <div>
+                <Label>End Date</Label>
+                <Input type="date" value={assignEnd} onChange={(e) => setAssignEnd(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label>Payment Status</Label>
+                <Select value={assignPaymentStatus} onValueChange={(v: any) => setAssignPaymentStatus(v)}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="paid">Paid</SelectItem>
+                    <SelectItem value="unpaid">Unpaid</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Membership Status</Label>
+                <Select value={assignStatus} onValueChange={(v: any) => setAssignStatus(v)}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="expired">Expired</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAssignOpen(false)}>Cancel</Button>
+            <Button onClick={handleAssignSubmit} className="bg-gradient-to-r from-neon-green to-neon-blue text-white" disabled={assignLoading}>
+              {assignLoading ? 'Assigning...' : 'Assign Membership'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Billing Management Dialog (scrollable + membership list scrollable) */}
       <Dialog open={isBillingOpen} onOpenChange={setIsBillingOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[600px] max-w-[95vw] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Billing Management</DialogTitle>
             <DialogDescription>
               Manage payment and billing information for {billingMember?.name}
             </DialogDescription>
           </DialogHeader>
-          
+
           {billingMember && (
-            <div className="grid gap-6 py-4">
+            <div className="grid gap-6 py-4 px-1 sm:px-2">
               {/* Member Info */}
               <div className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg">
                 <div className="w-12 h-12 bg-gradient-to-r from-neon-green to-neon-blue rounded-full flex items-center justify-center text-white">
@@ -583,8 +853,44 @@ export function MembershipManagement() {
                 </div>
                 <div>
                   <h4 className="font-medium">{billingMember.name}</h4>
-                  <p className="text-sm text-muted-foreground">{billingMember.planType}</p>
                 </div>
+              </div>
+
+              {/* Memberships for this member (from membermembershipService) */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-medium">Memberships</h4>
+                  {/* small "Assign" quick action here too */}
+                  <Button size="sm" variant="ghost" onClick={() => openAssignDialog(billingMember)}>
+                    <CreditCard className="w-4 h-4 mr-2" />
+                    Assign
+                  </Button>
+                </div>
+
+                {membershipLoading ? (
+                  <p className="text-sm text-muted-foreground">Loading memberships...</p>
+                ) : memberMemberships.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No membership records found for this member.</p>
+                ) : (
+                  // make the list itself scrollable so dialog stays constrained
+                  <div className="space-y-2 max-h-56 overflow-auto pr-2">
+                    {memberMemberships.map((mm) => (
+                      <div key={mm.id} className="p-3 border rounded-lg">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="font-medium">{mm.membership_name || '—'}</div>
+                            <div className="text-sm text-muted-foreground">
+                              {mm.start_date ? new Date(mm.start_date).toLocaleDateString() : 'N/A'} to {mm.end_date ? new Date(mm.end_date).toLocaleDateString() : 'N/A'}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm">{mm.payment_status || mm.status || '—'}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Payment Information */}
@@ -633,24 +939,24 @@ export function MembershipManagement() {
               <div className="space-y-3">
                 <h4 className="font-medium">Quick Actions</h4>
                 <div className="grid gap-2">
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     className="justify-start"
-                    onClick={() => console.log('Processing payment for:', billingMember.name)}
+                    onClick={() => openAssignDialog(billingMember)}
                   >
                     <CreditCard className="w-4 h-4 mr-2" />
-                    Process Payment
+                    Assign Membership
                   </Button>
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     className="justify-start"
                     onClick={() => console.log('Sending payment reminder to:', billingMember.email)}
                   >
                     <Mail className="w-4 h-4 mr-2" />
                     Send Payment Reminder
                   </Button>
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     className="justify-start"
                     onClick={() => console.log('Updating billing info for:', billingMember.name)}
                   >
@@ -666,7 +972,7 @@ export function MembershipManagement() {
             <Button variant="outline" onClick={() => setIsBillingOpen(false)}>
               Close
             </Button>
-            <Button 
+            <Button
               onClick={handleUpdatePayment}
               className="bg-gradient-to-r from-neon-green to-neon-blue text-white"
             >
@@ -676,7 +982,7 @@ export function MembershipManagement() {
         </DialogContent>
       </Dialog>
 
-      {/* Search and Filter */}
+      {/* Search and Filter - unchanged */}
       <Card className="border-border/50">
         <CardContent className="p-6">
           <div className="flex flex-col sm:flex-row gap-4">
@@ -722,7 +1028,6 @@ export function MembershipManagement() {
                 <TableRow>
                   <TableHead>Member</TableHead>
                   <TableHead className="hidden sm:table-cell">Contact</TableHead>
-                  <TableHead>Plan</TableHead>
                   <TableHead className="hidden md:table-cell">Period</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -754,37 +1059,65 @@ export function MembershipManagement() {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <div>
-                        <div className="font-medium">{member.planType}</div>
-                        <div className="text-sm text-muted-foreground">${member.amount}</div>
-                      </div>
-                    </TableCell>
                     <TableCell className="hidden md:table-cell">
                       <div className="space-y-1">
-                        <div className="text-sm">{new Date(member.startDate).toLocaleDateString()}</div>
-                        <div className="text-sm text-muted-foreground">to {new Date(member.endDate).toLocaleDateString()}</div>
+                        <div className="text-sm">{member.startDate ? new Date(member.startDate).toLocaleDateString() : 'N/A'}</div>
+                        <div className="text-sm text-muted-foreground">to {member.endDate ? new Date(member.endDate).toLocaleDateString() : 'N/A'}</div>
                       </div>
                     </TableCell>
                     <TableCell>{getStatusBadge(member.status)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button 
-                          variant="ghost" 
+                        <Button
+                          variant="ghost"
                           size="sm"
                           onClick={() => handleViewProfile(member)}
                           className="hover:bg-neon-green/10 hover:text-neon-green"
                         >
                           <User className="w-4 h-4" />
                         </Button>
-                        <Button 
-                          variant="ghost" 
+
+                        {/* open billing view */}
+                        <Button
+                          variant="ghost"
                           size="sm"
                           onClick={() => handleViewBilling(member)}
                           className="hover:bg-neon-blue/10 hover:text-neon-blue"
                         >
                           <CreditCard className="w-4 h-4" />
                         </Button>
+
+                        {/* NEW: quick Assign membership (opens assign dialog) */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openAssignDialog(member)}
+                          className="hover:bg-neon-green/10 hover:text-neon-green"
+                          title="Assign membership / payment"
+                        >
+                          <CreditCard className="w-4 h-4" />
+                        </Button>
+
+                        {/* Show Delete if active, Restore if not active */}
+                        {member.is_active === false || member.status === 'expired' ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRestore(member.id)}
+                            className="text-green-600 hover:bg-neon-green/10"
+                          >
+                            Restore
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDelete(member.id)}
+                            className="text-red-500 hover:bg-red-500/10"
+                          >
+                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18" /><path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" /><path d="M10 11v6M14 11v6M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" /></svg>
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -795,7 +1128,7 @@ export function MembershipManagement() {
         </CardContent>
       </Card>
 
-      {/* Quick Stats */}
+      {/* Quick Stats (unchanged) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="border-border/50">
           <CardHeader className="pb-2">

@@ -1,88 +1,113 @@
-import React, { useState, useEffect } from 'react';
-import { Login } from './components/Login';
-import { Layout } from './components/Layout';
-import { Dashboard } from './components/Dashboard';
-import { MembershipManagement } from './components/MembershipManagement';
-import { InvoiceManagement } from './components/InvoiceManagement';
-import { WorkoutPlans } from './components/WorkoutPlans';
-import { Reports } from './components/Reports';
-import { CommunicationHistory } from './components/CommunicationHistory';
-import { Settings } from './components/Settings';
+import React, { useState, useEffect } from "react";
+import { Toaster } from "sonner";
+import { Login } from "./components/Login";
+import { Layout } from "./components/Layout";
+import { Dashboard } from "./components/Dashboard";
+import { MembershipManagement } from "./components/MembershipManagement";
+import { InvoiceManagement } from "./components/InvoiceManagement";
+import { WorkoutPlans } from "./components/WorkoutPlans";
+import { Membership } from "./components/Membership.js";
+import { Reports } from "./components/Reports";
+import { CommunicationHistory } from "./components/CommunicationHistory";
+import { Settings } from "./components/Settings";
+import authService from "./service/authService.js"; // ✅ import your service
 
-export type NavigationItem = 'dashboard' | 'members' | 'invoices' | 'plans' | 'reports' | 'communication' | 'settings';
-export type Theme = 'light' | 'dark';
+export type NavigationItem =
+  | "dashboard"
+  | "members"
+  | "invoices"
+  | "plans"
+  | "membership"
+  | "reports"
+  | "communication"
+  | "settings";
+
+export type Theme = "light" | "dark";
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [currentPage, setCurrentPage] = useState<NavigationItem>('dashboard');
-  const [theme, setTheme] = useState<Theme>('dark');
+  const [currentPage, setCurrentPage] = useState<NavigationItem>("dashboard");
+  const [theme, setTheme] = useState<Theme>("dark");
+  const [loading, setLoading] = useState(true); // ⏳ to avoid flicker during auth check
 
-  // Load theme from localStorage on component mount
+  // ✅ Check if user is already logged in (token in localStorage)
   useEffect(() => {
-    const savedTheme = localStorage.getItem('gym-app-theme') as Theme;
-    if (savedTheme) {
-      setTheme(savedTheme);
+    const token = authService.getToken();
+    if (token) {
+      setIsAuthenticated(true);
     }
+    setLoading(false);
   }, []);
 
-  // Save theme to localStorage when it changes
+  // ✅ Load saved theme
   useEffect(() => {
-    localStorage.setItem('gym-app-theme', theme);
+    const savedTheme = localStorage.getItem("gym-app-theme") as Theme;
+    if (savedTheme) setTheme(savedTheme);
+  }, []);
+
+  // ✅ Save theme changes
+  useEffect(() => {
+    localStorage.setItem("gym-app-theme", theme);
   }, [theme]);
 
-  const handleLogin = () => {
-    setIsAuthenticated(true);
-  };
+  const handleLogin = () => setIsAuthenticated(true);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await authService.logout();
     setIsAuthenticated(false);
-    setCurrentPage('dashboard');
+    setCurrentPage("dashboard");
   };
 
-  const toggleTheme = () => {
-    setTheme(prevTheme => prevTheme === 'dark' ? 'light' : 'dark');
-  };
+  const toggleTheme = () =>
+    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
 
   const renderCurrentPage = () => {
     switch (currentPage) {
-      case 'dashboard':
+      case "dashboard":
         return <Dashboard onNavigate={setCurrentPage} />;
-      case 'members':
+      case "members":
         return <MembershipManagement />;
-      case 'invoices':
+      case "invoices":
         return <InvoiceManagement />;
-      case 'plans':
+      case "plans":
         return <WorkoutPlans />;
-      case 'reports':
+      case "membership":
+        return <Membership />;
+      case "reports":
         return <Reports />;
-      case 'communication':
+      case "communication":
         return <CommunicationHistory />;
-      case 'settings':
+      case "settings":
         return <Settings theme={theme} onThemeChange={setTheme} />;
       default:
         return <Dashboard />;
     }
   };
 
-  if (!isAuthenticated) {
+  if (loading) {
     return (
-      <div className={theme === 'dark' ? 'dark' : ''}>
-        <Login onLogin={handleLogin} />
+      <div className="flex items-center justify-center min-h-screen">
+        <p>Loading...</p>
       </div>
     );
   }
 
   return (
-    <div className={`${theme === 'dark' ? 'dark' : ''} min-h-screen bg-background`}>
-      <Layout 
-        currentPage={currentPage} 
-        onNavigate={setCurrentPage}
-        onLogout={handleLogout}
-        theme={theme}
-        onThemeToggle={toggleTheme}
-      >
-        {renderCurrentPage()}
-      </Layout>
+    <div className={`${theme === "dark" ? "dark" : ""} min-h-screen bg-background`}>
+      <Toaster position="top-right" richColors closeButton />
+      {!isAuthenticated ? (
+        <Login onLogin={handleLogin} />
+      ) : (
+        <Layout
+          currentPage={currentPage}
+          onNavigate={setCurrentPage}
+          onLogout={handleLogout}
+          theme={theme}
+          onThemeToggle={toggleTheme}
+        >
+          {renderCurrentPage()}
+        </Layout>
+      )}
     </div>
   );
 }
