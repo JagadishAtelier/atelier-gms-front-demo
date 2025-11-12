@@ -1,7 +1,7 @@
 
   # Gym Management System App (Community)
 
-  This is a code bundle for Gym Management System App (Community). The original project is available at https://www.figma.com/design/IuuZFpB0LgsYxneS7Fw0y4/Gym-Management-System-App--Community-.
+  This is a code bundle for Gym Management System App (Community). The original project is available at https://www.figma.com/design/QXozeJDImbziJuKqUOWfgt/Gym-Management-System-App--Community-.
 
   ## Running the code
 

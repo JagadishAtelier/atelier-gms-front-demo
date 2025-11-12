@@ -7,8 +7,9 @@ import { InvoiceManagement } from './components/InvoiceManagement';
 import { WorkoutPlans } from './components/WorkoutPlans';
 import { Reports } from './components/Reports';
 import { CommunicationHistory } from './components/CommunicationHistory';
+import { Settings } from './components/Settings';
 
-export type NavigationItem = 'dashboard' | 'members' | 'invoices' | 'plans' | 'reports' | 'communication';
+export type NavigationItem = 'dashboard' | 'members' | 'invoices' | 'plans' | 'reports' | 'communication' | 'settings';
 export type Theme = 'light' | 'dark';
 
 export default function App() {
@@ -56,6 +57,8 @@ export default function App() {
         return <Reports />;
       case 'communication':
         return <CommunicationHistory />;
+      case 'settings':
+        return <Settings theme={theme} onThemeChange={setTheme} />;
       default:
         return <Dashboard />;
     }

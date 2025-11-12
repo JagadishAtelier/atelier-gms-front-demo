@@ -182,7 +182,7 @@ export function InvoiceManagement() {
             <DollarSign className="h-4 w-4 text-neon-green" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl">₹{totals.totalAmount.toLocaleString()}</div>
+            <div className="text-2xl">${totals.totalAmount.toLocaleString()}</div>
             <p className="text-xs text-muted-foreground">
               This month's billing
             </p>
@@ -195,7 +195,7 @@ export function InvoiceManagement() {
             <CheckCircle className="h-4 w-4 text-neon-green" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl text-neon-green">₹{totals.paidAmount.toLocaleString()}</div>
+            <div className="text-2xl text-neon-green">${totals.paidAmount.toLocaleString()}</div>
             <p className="text-xs text-muted-foreground">
               {totals.paid} invoices paid
             </p>
@@ -208,7 +208,7 @@ export function InvoiceManagement() {
             <Clock className="h-4 w-4 text-yellow-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl text-yellow-500">₹{totals.pendingAmount.toLocaleString()}</div>
+            <div className="text-2xl text-yellow-500">${totals.pendingAmount.toLocaleString()}</div>
             <p className="text-xs text-muted-foreground">
               {totals.pending + totals.overdue} pending/overdue
             </p>
@@ -221,7 +221,7 @@ export function InvoiceManagement() {
             <AlertTriangle className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl text-red-500">₹{totals.lateFees.toLocaleString()}</div>
+            <div className="text-2xl text-red-500">${totals.lateFees.toLocaleString()}</div>
             <p className="text-xs text-muted-foreground">
               From {totals.overdue} overdue invoices
             </p>
@@ -301,10 +301,10 @@ export function InvoiceManagement() {
                     </TableCell>
                     <TableCell>
                       <div>
-                        <div className="font-medium">₹{invoice.amount}</div>
+                        <div className="font-medium">${invoice.amount}</div>
                         {invoice.lateFee > 0 && (
                           <div className="text-sm text-red-500">
-                            +₹{invoice.lateFee} late fee
+                            +${invoice.lateFee} late fee
                           </div>
                         )}
                       </div>

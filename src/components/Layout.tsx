@@ -13,7 +13,8 @@ import {
   LogOut,
   Dumbbell,
   Sun,
-  Moon
+  Moon,
+  Settings
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -32,6 +33,7 @@ const navigationItems = [
   { id: 'plans' as NavigationItem, label: 'Plans', icon: Clipboard },
   { id: 'reports' as NavigationItem, label: 'Reports', icon: BarChart3 },
   { id: 'communication' as NavigationItem, label: 'Messages', icon: MessageSquare },
+  { id: 'settings' as NavigationItem, label: 'Settings', icon: Settings },
 ];
 
 export function Layout({ children, currentPage, onNavigate, onLogout, theme, onThemeToggle }: LayoutProps) {
@@ -126,6 +128,18 @@ export function Layout({ children, currentPage, onNavigate, onLogout, theme, onT
               </SheetContent>
             </Sheet>
           </div>
+        </div>
+
+        {/* Desktop Header with Theme Toggle */}
+        <div className="hidden md:flex items-center justify-end p-4 bg-card/50 border-b border-border backdrop-blur-sm">
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={onThemeToggle} 
+            className="h-8 w-8 p-0 text-foreground hover:bg-accent"
+          >
+            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </Button>
         </div>
 
         {/* Page Content */}

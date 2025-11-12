@@ -333,10 +333,10 @@ export function MembershipManagement() {
                       <SelectValue placeholder="Select a plan" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="basic-monthly" className="text-sm">Basic Monthly - ₹80</SelectItem>
-                      <SelectItem value="premium-monthly" className="text-sm">Premium Monthly - ₹150</SelectItem>
-                      <SelectItem value="basic-annual" className="text-sm">Basic Annual - ₹800</SelectItem>
-                      <SelectItem value="premium-annual" className="text-sm">Premium Annual - ₹1200</SelectItem>
+                      <SelectItem value="basic-monthly" className="text-sm">Basic Monthly - $80</SelectItem>
+                      <SelectItem value="premium-monthly" className="text-sm">Premium Monthly - $150</SelectItem>
+                      <SelectItem value="basic-annual" className="text-sm">Basic Annual - $800</SelectItem>
+                      <SelectItem value="premium-annual" className="text-sm">Premium Annual - $1200</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -505,7 +505,7 @@ export function MembershipManagement() {
                   </div>
                   <div>
                     <Label>Amount</Label>
-                    <p className="text-sm text-muted-foreground">₹{selectedMember.amount}</p>
+                    <p className="text-sm text-muted-foreground">${selectedMember.amount}</p>
                   </div>
                   <div>
                     <Label>Start Date</Label>
@@ -597,7 +597,7 @@ export function MembershipManagement() {
                   </div>
                   <div>
                     <Label>Amount</Label>
-                    <p className="text-sm text-neon-green font-medium">₹{billingMember.amount}</p>
+                    <p className="text-sm text-neon-green font-medium">${billingMember.amount}</p>
                   </div>
                   <div>
                     <Label>Last Payment</Label>
@@ -757,7 +757,7 @@ export function MembershipManagement() {
                     <TableCell>
                       <div>
                         <div className="font-medium">{member.planType}</div>
-                        <div className="text-sm text-muted-foreground">₹{member.amount}</div>
+                        <div className="text-sm text-muted-foreground">${member.amount}</div>
                       </div>
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
@@ -804,7 +804,7 @@ export function MembershipManagement() {
           <CardContent>
             <div className="text-2xl text-neon-green">23 members</div>
             <p className="text-xs text-muted-foreground mt-1">
-              Estimated revenue: ₹3,450
+              Estimated revenue: $3,450
             </p>
           </CardContent>
         </Card>
