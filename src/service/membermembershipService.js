@@ -96,6 +96,30 @@ const membermembershipService = {
       throw err.response?.data || err;
     }
   },
+  async getActiveMembershipsByMemberId(memberId) {
+    try {
+      const res = await axios.get(`${API_URL}/member/${encodeURIComponent(memberId)}/active`, {
+        headers: { ...buildHeaders() },
+      });
+      return res.data;
+    } catch (err) {
+      throw err.response?.data || err;
+    }
+  },
+
+  /**
+   * ✅ Get All Memberships by Member ID (active + expired + upcoming)
+   */
+  async getAllMembershipsByMemberId(memberId) {
+    try {
+      const res = await axios.get(`${API_URL}/member/${encodeURIComponent(memberId)}/all`, {
+        headers: { ...buildHeaders() },
+      });
+      return res.data;
+    } catch (err) {
+      throw err.response?.data || err;
+    }
+  },
 };
 
 export default membermembershipService;

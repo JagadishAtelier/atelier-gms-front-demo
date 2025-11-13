@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Plus,
-  DollarSign,
+  IndianRupee,
   Clock,
   User,
   RefreshCw,
@@ -63,21 +63,27 @@ export function Membership() {
     description: "",
   });
 
-  // 🧠 Fetch memberships
+  // 🧠 Fetch memberships (extracted so it can be reused)
+  const fetchMemberships = async () => {
+    setLoading(true);
+    try {
+      const response = await membershipService.getMemberships();
+      // try common response shapes safely
+      const list = response?.data?.data ?? response?.data ?? response ?? [];
+      // ensure array
+      const arr = Array.isArray(list) ? list : [];
+      setMemberships(arr);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to load memberships");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // initial load
   useEffect(() => {
-    const fetchMemberships = async () => {
-      setLoading(true);
-      try {
-        const response = await membershipService.getMemberships();
-        const list = response.data?.data || [];
-        setMemberships(list);
-      } catch (err: any) {
-        toast.error(err.message || "Failed to load memberships");
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchMemberships();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ➕ Create membership
@@ -95,13 +101,17 @@ export function Membership() {
         duration_months: parseInt(newMembership.duration_months) || 1,
         description: newMembership.description,
       };
-      const created = await membershipService.createMembership(payload);
-      setMemberships((prev) => [...prev, created]);
+      // create on backend
+      await membershipService.createMembership(payload);
+
+      // REFRESH: re-fetch memberships to reflect canonical server state
+      await fetchMemberships();
+
       toast.success("Membership created successfully!");
       setNewMembership({ name: "", price: "", duration_months: "", description: "" });
       setIsCreateOpen(false);
     } catch (err: any) {
-      toast.error(err.message || "Failed to create membership");
+      toast.error(err?.message || "Failed to create membership");
     } finally {
       setLoading(false);
     }
@@ -111,10 +121,11 @@ export function Membership() {
   const handleDelete = async (id: string) => {
     try {
       await membershipService.deleteMembership(id);
-      setMemberships((prev) => prev.filter((m) => m.id !== id));
+      // refresh list after delete
+      await fetchMemberships();
       toast.success("Membership deleted!");
     } catch (err: any) {
-      toast.error(err.message || "Failed to delete membership");
+      toast.error(err?.message || "Failed to delete membership");
     }
   };
 
@@ -122,12 +133,11 @@ export function Membership() {
   const handleRestore = async (id: string) => {
     try {
       await membershipService.restoreMembership(id);
-      setMemberships((prev) =>
-        prev.map((m) => (m.id === id ? { ...m, is_active: true } : m))
-      );
+      // refresh list after restore
+      await fetchMemberships();
       toast.success("Membership restored!");
     } catch (err: any) {
-      toast.error(err.message || "Failed to restore membership");
+      toast.error(err?.message || "Failed to restore membership");
     }
   };
 
@@ -276,7 +286,7 @@ export function Membership() {
 
                   <CardContent className="space-y-3 text-sm">
                     <div className="flex items-center gap-2 text-muted-foreground">
-                      <DollarSign className="w-4 h-4 text-neon-green" />
+                      <IndianRupee className="w-4 h-4 text-neon-green" />
                       ₹{plan.price} / {plan.duration_months} month
                       {plan.duration_months > 1 ? "s" : ""}
                     </div>

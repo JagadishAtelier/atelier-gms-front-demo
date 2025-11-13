@@ -4,9 +4,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Textarea } from './ui/textarea';
@@ -46,7 +45,6 @@ interface Member {
   lastPayment?: string;
   nextBilling?: string;
   notes?: string;
-  // optional backend audit / extra fields
   is_active?: boolean;
   created_by_name?: string;
   createdAt?: string;
@@ -73,30 +71,31 @@ export function MembershipManagement() {
     notes: ''
   });
 
-  // Member profile dialog state
+  // profile / billing states
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editedMember, setEditedMember] = useState<Member | null>(null);
 
-  // Billing dialog state
   const [isBillingOpen, setIsBillingOpen] = useState(false);
   const [billingMember, setBillingMember] = useState<Member | null>(null);
 
-  // API-driven members state (default to mock to avoid blank UI)
+  // data/loaders
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(false);
-  const [imageUploading, setImageUploading] = useState(false); // new state for image upload
+  const [imageUploading, setImageUploading] = useState(false);
 
-  // NEW: member-membership related state used when viewing billing
+  // member-membership lists for billing panel
   const [memberMemberships, setMemberMemberships] = useState<any[]>([]);
   const [membershipLoading, setMembershipLoading] = useState(false);
+  const [billingHasActive, setBillingHasActive] = useState(false);
+  const [billingActiveItems, setBillingActiveItems] = useState<any[]>([]);
 
-  // NEW: membership plans (options) for selection when assigning membership
+  // membership plans
   const [membershipOptions, setMembershipOptions] = useState<any[]>([]);
   const [membershipOptionsLoading, setMembershipOptionsLoading] = useState(false);
 
-  // NEW: Assign membership dialog state
+  // assign dialog states
   const [isAssignOpen, setIsAssignOpen] = useState(false);
   const [assignMember, setAssignMember] = useState<Member | null>(null);
   const [selectedMembershipId, setSelectedMembershipId] = useState('');
@@ -105,8 +104,9 @@ export function MembershipManagement() {
   const [assignPaymentStatus, setAssignPaymentStatus] = useState<'paid' | 'unpaid'>('paid');
   const [assignStatus, setAssignStatus] = useState<'active' | 'expired' | 'cancelled'>('active');
   const [assignLoading, setAssignLoading] = useState(false);
+  const [activeMembershipInfo, setActiveMembershipInfo] = useState<any | null>(null);
 
-  // ----- Helpers -----
+  // --- Helpers to normalize various response shapes ---
   const extractListFromResponse = (res: any): any[] => {
     if (!res) return [];
     if (Array.isArray(res)) return res;
@@ -117,7 +117,15 @@ export function MembershipManagement() {
     return [];
   };
 
-  // map backend member -> UI Member (safe defaults)
+  // --- Currency helper: format INR ---
+  const formatCurrencyINR = (val: number | string | undefined | null) => {
+    if (val === undefined || val === null || val === '') return '—';
+    const num = Number(val);
+    if (isNaN(num)) return '—';
+    return num.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
+  };
+
+  // map backend member -> UI Member
   const mapBackendToMember = (item: any): Member => {
     const amount = item.membership?.price ? Number(item.membership.price) : (item.amount ? Number(item.amount) : 0);
     const startDate = item.start_date || item.startDate || item.join_date || item.joinDate || '';
@@ -151,19 +159,15 @@ export function MembershipManagement() {
     };
   };
 
-  // ----- Load members from API -----
+  // --- Load members ---
   useEffect(() => {
     const fetchMembers = async () => {
       setLoading(true);
       try {
         const response = await memberService.getMembers({ page: 1, limit: 200 });
         const list = extractListFromResponse(response);
-        if (list.length > 0) {
-          const mapped = list.map(mapBackendToMember);
-          setMembers(mapped);
-        } else {
-          setMembers(list.length === 0 ? [] : list.map(mapBackendToMember));
-        }
+        const mapped = list.map(mapBackendToMember);
+        setMembers(mapped);
       } catch (err: any) {
         console.error('Failed to fetch members', err);
         toast.error(err?.message || 'Failed to load members');
@@ -175,7 +179,7 @@ export function MembershipManagement() {
     fetchMembers();
   }, []);
 
-  // ----- Load membership plans for "Assign membership" select -----
+  // --- Load membership plans ---
   useEffect(() => {
     const fetchMemberships = async () => {
       setMembershipOptionsLoading(true);
@@ -192,7 +196,7 @@ export function MembershipManagement() {
     fetchMemberships();
   }, []);
 
-  // ---------- Image upload helper ----------
+  // --- Image upload ---
   const uploadAndSetPhoto = async (file: File | null) => {
     if (!file) return;
     try {
@@ -208,7 +212,7 @@ export function MembershipManagement() {
     }
   };
 
-  // Add member (calls service, then updates UI)
+  // --- Add member ---
   const handleAddMember = async () => {
     if (!newMember.name || !newMember.email) {
       toast.error('Name and email are required');
@@ -217,7 +221,6 @@ export function MembershipManagement() {
 
     try {
       setLoading(true);
-      // Build payload following createMemberSchema
       const payload: any = {
         name: newMember.name,
         email: newMember.email,
@@ -227,12 +230,11 @@ export function MembershipManagement() {
         join_date: newMember.joinDate ? new Date(newMember.joinDate).toISOString() : undefined,
         start_date: newMember.startDate ? new Date(newMember.startDate).toISOString() : undefined,
         workout_batch: newMember.batch || undefined,
-        image_url: newMember.photo || undefined, // <-- only URL goes here
+        image_url: newMember.photo || undefined,
         is_active: typeof newMember.is_active !== 'undefined' ? newMember.is_active : true,
         notes: newMember.notes || undefined
       };
 
-      // Remove undefined keys to keep payload clean
       Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
 
       const createdRes = await memberService.createMember(payload);
@@ -250,7 +252,7 @@ export function MembershipManagement() {
     }
   };
 
-  // View profile
+  // --- Profile edit handlers ---
   const handleViewProfile = (member: Member) => {
     setSelectedMember(member);
     setEditedMember({ ...member });
@@ -271,7 +273,6 @@ export function MembershipManagement() {
     if (!editedMember) return;
     try {
       setLoading(true);
-      // Build payload following updateMemberSchema
       const payload: any = {
         name: editedMember.name,
         email: editedMember.email,
@@ -286,7 +287,6 @@ export function MembershipManagement() {
         dob: editedMember.dob ? new Date(editedMember.dob).toISOString() : undefined
       };
 
-      // strip undefined
       Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
 
       await memberService.updateMember(editedMember.id, payload);
@@ -302,7 +302,7 @@ export function MembershipManagement() {
     }
   };
 
-  // Delete (soft delete) member
+  // --- Delete / Restore member ---
   const handleDelete = async (id: string) => {
     try {
       setLoading(true);
@@ -317,7 +317,6 @@ export function MembershipManagement() {
     }
   };
 
-  // Restore member (when previously soft-deleted)
   const handleRestore = async (id: string) => {
     try {
       setLoading(true);
@@ -332,21 +331,136 @@ export function MembershipManagement() {
     }
   };
 
-  // NEW: open assign membership dialog for a member
-  const openAssignDialog = (member: Member) => {
+  // --- Date helpers ---
+  const formatDateYYYYMMDD = (d: Date) => {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const formatPretty = (isoOrDate: string | Date | null) => {
+    if (!isoOrDate) return 'N/A';
+    const d = typeof isoOrDate === 'string' ? new Date(isoOrDate) : isoOrDate;
+    if (isNaN(d.getTime())) return 'N/A';
+    return d.toLocaleDateString();
+  };
+
+  const addDays = (d: Date, days: number) => {
+    const copy = new Date(d);
+    copy.setDate(copy.getDate() + days);
+    return copy;
+  };
+
+  const addMonthsToDate = (d: Date, months: number) => {
+    const copy = new Date(d);
+    const m = copy.getMonth();
+    copy.setMonth(m + months);
+    if (copy.getDate() !== d.getDate()) {
+      copy.setDate(0);
+    }
+    return copy;
+  };
+
+  // --- Fetch latest membership for assign dialog (prefers active membership) ---
+  const fetchLatestMembershipForMember = async (memberId: string) => {
+    try {
+      // try active first
+      const activeRes = await membermembershipService.getActiveMembershipsByMemberId(memberId);
+      const activeList = extractListFromResponse(activeRes);
+      if (Array.isArray(activeList) && activeList.length > 0) {
+        const withParsed = activeList.map((it: any) => ({
+          ...it,
+          parsedEnd: it.end_date ? new Date(it.end_date) : it.endDate ? new Date(it.endDate) : null
+        })).filter((it: any) => it.parsedEnd !== null);
+        if (withParsed.length > 0) {
+          withParsed.sort((a: any, b: any) => b.parsedEnd.getTime() - a.parsedEnd.getTime());
+          return { latest: withParsed[0], source: 'active' };
+        }
+      }
+
+      // fallback: all memberships
+      const allRes = await membermembershipService.getAllMembershipsByMemberId(memberId);
+      const allList = extractListFromResponse(allRes);
+      if (!Array.isArray(allList) || allList.length === 0) return { latest: null, source: 'none' };
+
+      const withParsedAll = allList.map((it: any) => ({
+        ...it,
+        parsedEnd: it.end_date ? new Date(it.end_date) : it.endDate ? new Date(it.endDate) : null
+      })).filter((it: any) => it.parsedEnd !== null);
+      if (withParsedAll.length === 0) return { latest: null, source: 'none' };
+
+      withParsedAll.sort((a: any, b: any) => b.parsedEnd.getTime() - a.parsedEnd.getTime());
+      return { latest: withParsedAll[0], source: 'all' };
+    } catch (err) {
+      console.warn('Failed to fetch latest membership for member', err);
+      return { latest: null, source: 'error' };
+    }
+  };
+
+  // --- Open assign dialog with smart defaults ---
+  const openAssignDialog = async (member: Member) => {
     setAssignMember(member);
-    // default dates: start = today, end = +30 days
-    const today = new Date();
-    const endDefault = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-    setAssignStart(today.toISOString().slice(0, 10));
-    setAssignEnd(endDefault.toISOString().slice(0, 10));
     setSelectedMembershipId('');
     setAssignPaymentStatus('paid');
     setAssignStatus('active');
+    setActiveMembershipInfo(null);
+
+    const today = new Date();
+    let computedStart = today;
+
+    try {
+      const { latest, source } = await fetchLatestMembershipForMember(member.id);
+      if (latest && latest.parsedEnd) {
+        const lastEndDate: Date = latest.parsedEnd;
+        if (lastEndDate >= today) {
+          computedStart = addDays(lastEndDate, 1);
+          setActiveMembershipInfo({
+            id: latest.id,
+            membership_name: latest.Membership?.name || latest.membership?.name || latest.membership_name || '—',
+            end_date: latest.end_date || latest.endDate || null,
+            source
+          });
+        } else {
+          computedStart = today;
+        }
+      }
+    } catch (err) {
+      computedStart = today;
+    }
+
+    setAssignStart(formatDateYYYYMMDD(computedStart));
+    const defaultEnd = addMonthsToDate(computedStart, 1);
+    setAssignEnd(formatDateYYYYMMDD(defaultEnd));
     setIsAssignOpen(true);
   };
 
-  // NEW: submit assign
+  // --- Auto-calc assignEnd based on selected plan's duration_months ---
+  useEffect(() => {
+    if (!assignStart) return;
+
+    const start = new Date(assignStart + 'T00:00:00');
+    if (!isNaN(start.getTime())) {
+      const selectedPlan = membershipOptions.find((m: any) => String(m.id) === String(selectedMembershipId));
+      let months = 1;
+      if (selectedPlan) {
+        months =
+          (selectedPlan.duration_months && Number(selectedPlan.duration_months)) ||
+          (selectedPlan.duration && Number(selectedPlan.duration)) ||
+          (selectedPlan.months && Number(selectedPlan.months)) ||
+          (selectedPlan.durationMonths && Number(selectedPlan.durationMonths)) ||
+          1;
+        if (isNaN(months) || months <= 0) months = 1;
+      } else {
+        months = 1;
+      }
+
+      const calcEnd = addMonthsToDate(start, months);
+      setAssignEnd(formatDateYYYYMMDD(calcEnd));
+    }
+  }, [selectedMembershipId, assignStart, membershipOptions]);
+
+  // --- Submit assign ---
   const handleAssignSubmit = async () => {
     if (!assignMember) {
       toast.error('No member selected');
@@ -361,6 +475,13 @@ export function MembershipManagement() {
       return;
     }
 
+    const startDateObj = new Date(assignStart + 'T00:00:00');
+    const endDateObj = new Date(assignEnd + 'T00:00:00');
+    if (startDateObj > endDateObj) {
+      toast.error('Start date must be before end date');
+      return;
+    }
+
     try {
       setAssignLoading(true);
       const payload: any = {
@@ -368,28 +489,35 @@ export function MembershipManagement() {
         membership_id: selectedMembershipId,
         start_date: new Date(assignStart).toISOString(),
         end_date: new Date(assignEnd).toISOString(),
-        payment_status: assignPaymentStatus, // 'paid' | 'unpaid'
-        status: assignStatus // 'active' | 'expired' | 'cancelled'
+        payment_status: assignPaymentStatus,
+        status: assignStatus
       };
 
-      const res = await membermembershipService.createMemberMembership(payload);
+      await membermembershipService.createMemberMembership(payload);
       toast.success('Membership assigned successfully');
 
-      // reload list for billing view (if billingMember is same)
+      // reload membership list for billing panel if open for this member
       if (assignMember && billingMember && assignMember.id === billingMember.id) {
         try {
           setMembershipLoading(true);
-          const listRes = await membermembershipService.getAllMemberMemberships({ member_id: billingMember.id, limit: 50 });
+          const listRes = await membermembershipService.getAllMembershipsByMemberId(billingMember.id);
           const list = extractListFromResponse(listRes);
           const normalized = list.map((itm: any) => ({
             id: itm.id,
-            membership_name: itm.membership?.name || itm.membership_name || itm.membershipId || (itm.membership_id || ''),
+            membership_name: itm.Membership?.name || itm.membership?.name || itm.membership_name || (itm.membership_id || ''),
             start_date: itm.start_date || itm.startDate || null,
             end_date: itm.end_date || itm.endDate || null,
             payment_status: itm.payment_status || itm.paymentStatus || null,
             status: itm.status || null,
+            raw: itm
           }));
           setMemberMemberships(normalized);
+
+          // also re-evaluate active memberships
+          const actRes = await membermembershipService.getActiveMembershipsByMemberId(billingMember.id);
+          const actList = extractListFromResponse(actRes);
+          setBillingHasActive(Array.isArray(actList) && actList.length > 0);
+          setBillingActiveItems(actList || []);
         } catch (err) {
           console.error('Reload memberships failed', err);
         } finally {
@@ -406,49 +534,132 @@ export function MembershipManagement() {
     }
   };
 
-  // NEW: load member-membership relations when opening billing view
+  // --- Billing panel: load all memberships + check actives ---
   const handleViewBilling = async (member: Member) => {
     setBillingMember(member);
     setIsBillingOpen(true);
 
-    // fetch member-membership relations for this member
     try {
       setMembershipLoading(true);
       setMemberMemberships([]);
-      // use service; filter by member_id (backend supports filters)
-      const res = await membermembershipService.getAllMemberMemberships({ member_id: member.id, limit: 50 });
+      setBillingHasActive(false);
+      setBillingActiveItems([]);
+
+      // all memberships for this member (backend returns array of relations with Member & Membership included)
+      const res = await membermembershipService.getAllMembershipsByMemberId(member.id);
       const list = extractListFromResponse(res);
 
-      // normalize list to display
+      // normalize items and keep raw for later calculations
       const normalized = list.map((itm: any) => ({
         id: itm.id,
-        membership_name: itm.membership?.name || itm.membership_name || itm.membershipId || (itm.membership_id || ''),
+        membership_name: itm.Membership?.name || itm.membership?.name || itm.membership_name || (itm.membership_id || ''),
         start_date: itm.start_date || itm.startDate || null,
         end_date: itm.end_date || itm.endDate || null,
         payment_status: itm.payment_status || itm.paymentStatus || null,
         status: itm.status || null,
+        createdAt: itm.createdAt || itm.created_at || itm.createdAt || null,
+        Membership: itm.Membership || itm.membership || null,
+        raw: itm
       }));
-
       setMemberMemberships(normalized);
+
+      // --- Compute current plan, last payment, amount, next billing ---
+
+      // 1) active memberships (status === 'active' or raw.is_active true)
+      const activeList = normalized.filter((n) => (n.raw?.status === 'active' || n.raw?.is_active === true));
+
+      // pick the active membership with the highest end_date (latest end)
+      const parseDate = (s: string | null) => (s ? new Date(s) : null);
+      const withParsedEnd = activeList
+        .map((a) => ({ ...a, parsedEnd: parseDate(a.end_date) }))
+        .filter((a) => a.parsedEnd instanceof Date && !isNaN(a.parsedEnd.getTime()));
+
+      let currentPlanName: string | null = null;
+      if (withParsedEnd.length > 0) {
+        withParsedEnd.sort((a, b) => b.parsedEnd!.getTime() - a.parsedEnd!.getTime());
+        currentPlanName = withParsedEnd[0].Membership?.name || withParsedEnd[0].membership_name || null;
+      } else {
+        // fallback: use most recently created membership's plan if no active
+        const mostRecent = normalized
+          .slice()
+          .filter(n => n.createdAt)
+          .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())[0];
+        currentPlanName = mostRecent?.Membership?.name || mostRecent?.membership_name || null;
+      }
+
+      // 2) last payment: pick the latest record with payment_status === 'paid' by createdAt
+      const paidList = normalized
+        .filter((n) => (n.payment_status === 'paid' || n.raw?.payment_status === 'paid'))
+        .filter(n => n.createdAt);
+      let lastPaymentDate: string | null = null;
+      if (paidList.length > 0) {
+        paidList.sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
+        lastPaymentDate = paidList[0].createdAt;
+      } else {
+        lastPaymentDate = null;
+      }
+
+      // 3) amount: use latest created membership's Membership.price if available
+      const latestCreated = normalized
+        .slice()
+        .filter(n => n.createdAt)
+        .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())[0];
+      let amountVal: number | undefined = undefined;
+      if (latestCreated?.Membership?.price) {
+        const p = Number(latestCreated.Membership.price);
+        amountVal = isNaN(p) ? undefined : p;
+      } else if (latestCreated?.raw?.amount) {
+        const p = Number(latestCreated.raw.amount);
+        amountVal = isNaN(p) ? undefined : p;
+      }
+
+      // 4) next billing: compute the highest end_date across all memberships, then +1 day
+      const allParsedEnds = normalized
+        .map(n => parseDate(n.end_date))
+        .filter((d): d is Date => d instanceof Date && !isNaN(d.getTime()));
+      let nextBillingDateISO: string | null = null;
+      if (allParsedEnds.length > 0) {
+        // get max end date
+        const maxEnd = allParsedEnds.reduce((max, cur) => (cur.getTime() > max.getTime() ? cur : max), allParsedEnds[0]);
+        const nextBill = addDays(maxEnd, 1);
+        nextBillingDateISO = nextBill.toISOString();
+      }
+
+      // update billing active flags
+      setBillingHasActive(activeList.length > 0);
+      setBillingActiveItems(activeList);
+
+      // update billingMember fields so the UI shows them
+      setBillingMember((prev) => ({
+        ...(prev || member),
+        planType: currentPlanName || (prev?.planType ?? ''),
+        amount: typeof amountVal !== 'undefined' ? amountVal : (prev?.amount ?? undefined),
+        lastPayment: lastPaymentDate || prev?.lastPayment || undefined,
+        nextBilling: nextBillingDateISO || prev?.nextBilling || undefined
+      }));
     } catch (err: any) {
       console.error('Failed to load member memberships', err);
       toast.error(err?.message || 'Failed to load memberships for this member');
       setMemberMemberships([]);
+      setBillingHasActive(false);
+      setBillingActiveItems([]);
     } finally {
       setMembershipLoading(false);
     }
   };
 
   const handleUpdatePayment = () => {
+    // This is a mock action. Replace with real payment flow.
     console.log('Process payment for:', billingMember?.name);
     setIsBillingOpen(false);
     toast.success('Payment processed (mock)');
   };
 
-  // Filter & search derived members
+  // search & filter
   const filteredMembers = members.filter(member => {
-    const matchesSearch = member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (member.email || '').toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch =
+      member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (member.email || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesFilter = selectedFilter === 'all' || member.status === selectedFilter;
     return matchesSearch && matchesFilter;
   });
@@ -475,13 +686,14 @@ export function MembershipManagement() {
 
   return (
     <div className="space-y-6">
-      {/* top area unchanged */}
+      {/* Top area */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl mb-2">Membership Management</h1>
           <p className="text-muted-foreground">Manage gym members, plans, and renewals</p>
         </div>
-        {/* Add member dialog trigger unchanged */}
+
+        {/* Add member */}
         <Dialog open={isAddMemberOpen} onOpenChange={setIsAddMemberOpen}>
           <DialogTrigger asChild>
             <Button className="bg-gradient-to-r from-neon-green to-neon-blue text-white w-full sm:w-auto">
@@ -491,107 +703,52 @@ export function MembershipManagement() {
             </Button>
           </DialogTrigger>
 
-          {/* DialogContent made scrollable with max height */}
           <DialogContent className="w-[95vw] max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl max-h-[90vh] overflow-y-auto mx-4 sm:mx-0">
             <DialogHeader className="px-1 sm:px-0">
               <DialogTitle className="text-lg sm:text-xl">Add New Member</DialogTitle>
-              <DialogDescription className="text-sm sm:text-base">
-                Add a new member to your gym. Fill in all the required information.
-              </DialogDescription>
             </DialogHeader>
             <div className="grid gap-3 sm:gap-4 py-3 sm:py-4 px-1 sm:px-0">
-              {/* Photo Section */}
               <div className="grid gap-2">
                 <Label htmlFor="photo" className="text-sm sm:text-base">Member Photo</Label>
-                <div className="flex flex-col gap-2">
-                  <Input
-                    id="photo"
-                    type="file"
-                    accept="image/*"
-                    capture="user"
-                    onChange={async (e: any) => {
-                      const file = e.target.files?.[0] || null;
-                      if (!file) return;
-                      // Upload file to your upload endpoint and set the returned URL
-                      await uploadAndSetPhoto(file);
-                    }}
-                    className="cursor-pointer text-sm"
-                    disabled={imageUploading}
-                  />
-                  {imageUploading ? (
-                    <div className="text-xs text-muted-foreground">Uploading image...</div>
-                  ) : newMember.photo ? (
-                    <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-lg overflow-hidden border-2 border-neon-green mx-auto sm:mx-0">
-                      <img
-                        src={newMember.photo}
-                        alt="Member preview"
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  ) : null}
-                  <p className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
-                    Upload a photo or use camera to capture member's image (only URL is saved)
-                  </p>
-                </div>
+                <Input
+                  id="photo"
+                  type="file"
+                  accept="image/*"
+                  capture="user"
+                  onChange={async (e: any) => {
+                    const file = e.target.files?.[0] || null;
+                    if (!file) return;
+                    await uploadAndSetPhoto(file);
+                  }}
+                  className="cursor-pointer text-sm"
+                  disabled={imageUploading}
+                />
+                {imageUploading ? <div className="text-xs text-muted-foreground">Uploading image...</div> : null}
               </div>
 
-              {/* Personal Information Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div className="grid gap-2 sm:col-span-2">
-                  <Label htmlFor="name" className="text-sm sm:text-base">Full Name</Label>
-                  <Input
-                    id="name"
-                    value={newMember.name}
-                    onChange={(e) => setNewMember({...newMember, name: e.target.value})}
-                    placeholder="Enter member's full name"
-                    className="text-sm sm:text-base"
-                  />
+                  <Label>Full Name</Label>
+                  <Input value={newMember.name} onChange={(e) => setNewMember({...newMember, name: e.target.value})} />
                 </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="email" className="text-sm sm:text-base">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={newMember.email}
-                    onChange={(e) => setNewMember({...newMember, email: e.target.value})}
-                    placeholder="member@example.com"
-                    className="text-sm sm:text-base"
-                  />
+                <div>
+                  <Label>Email</Label>
+                  <Input type="email" value={newMember.email} onChange={(e) => setNewMember({...newMember, email: e.target.value})} />
                 </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="phone" className="text-sm sm:text-base">Phone</Label>
-                  <Input
-                    id="phone"
-                    value={newMember.phone}
-                    onChange={(e) => setNewMember({...newMember, phone: e.target.value})}
-                    placeholder="+1 (555) 123-4567"
-                    className="text-sm sm:text-base"
-                  />
+                <div>
+                  <Label>Phone</Label>
+                  <Input value={newMember.phone} onChange={(e) => setNewMember({...newMember, phone: e.target.value})} />
                 </div>
               </div>
 
-              {/* Start Date */}
-              <div className="grid gap-2">
-                <Label htmlFor="startDate" className="text-sm sm:text-base">Start Date</Label>
-                <Input
-                  id="startDate"
-                  type="date"
-                  value={newMember.startDate}
-                  onChange={(e) => setNewMember({...newMember, startDate: e.target.value})}
-                  className="text-sm sm:text-base"
-                />
+              <div>
+                <Label>Start Date</Label>
+                <Input type="date" value={newMember.startDate} onChange={(e) => setNewMember({...newMember, startDate: e.target.value})} />
               </div>
             </div>
 
             <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-0 px-1 sm:px-0">
-              <Button
-                type="submit"
-                onClick={handleAddMember}
-                className="w-full sm:w-auto bg-gradient-to-r from-neon-green to-neon-blue text-white order-2 sm:order-1"
-                disabled={loading || imageUploading}
-              >
+              <Button onClick={handleAddMember} className="w-full sm:w-auto bg-gradient-to-r from-neon-green to-neon-blue text-white" disabled={loading || imageUploading}>
                 {loading ? 'Saving...' : 'Add Member'}
               </Button>
             </DialogFooter>
@@ -599,46 +756,26 @@ export function MembershipManagement() {
         </Dialog>
       </div>
 
-      {/* Member Profile Dialog (scrollable) */}
+      {/* Profile dialog */}
       <Dialog open={isProfileOpen} onOpenChange={setIsProfileOpen}>
         <DialogContent className="sm:max-w-[600px] max-w-[95vw] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
               Member Profile
-              {!isEditing && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleEditProfile}
-                  className="ml-2"
-                >
-                  <Edit className="w-4 h-4 mr-2" />
-                  Edit
-                </Button>
-              )}
+              {!isEditing && <Button variant="outline" size="sm" onClick={handleEditProfile}><Edit className="w-4 h-4 mr-2" />Edit</Button>}
             </DialogTitle>
-            <DialogDescription>
-              {isEditing ? 'Edit member information' : 'View member details and information'}
-            </DialogDescription>
           </DialogHeader>
 
           {selectedMember && editedMember && (
             <div className="grid gap-6 py-4 px-1 sm:px-2">
-              {/* Member Photo and Basic Info */}
               <div className="flex items-start gap-4">
                 <div className="w-20 h-20 bg-gradient-to-r from-neon-green to-neon-blue rounded-full flex items-center justify-center text-white text-xl">
                   {selectedMember.name.charAt(0)}
                 </div>
                 <div className="flex-1 space-y-2">
                   {isEditing ? (
-                    <Input
-                      value={editedMember.name}
-                      onChange={(e) => setEditedMember({...editedMember, name: e.target.value})}
-                      className="text-lg font-semibold"
-                    />
-                  ) : (
-                    <h3 className="text-lg font-semibold">{selectedMember.name}</h3>
-                  )}
+                    <Input value={editedMember.name} onChange={(e) => setEditedMember({...editedMember, name: e.target.value})} className="text-lg font-semibold" />
+                  ) : <h3 className="text-lg font-semibold">{selectedMember.name}</h3>}
                   <div className="flex items-center gap-2">
                     {getStatusBadge(selectedMember.status)}
                     <Badge variant="outline">{selectedMember.planType}</Badge>
@@ -646,66 +783,30 @@ export function MembershipManagement() {
                 </div>
               </div>
 
-              {/* Contact Information */}
               <div className="grid gap-4">
                 <h4 className="font-medium">Contact Information</h4>
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div>
                     <Label>Email</Label>
-                    {isEditing ? (
-                      <Input
-                        type="email"
-                        value={editedMember.email}
-                        onChange={(e) => setEditedMember({...editedMember, email: e.target.value})}
-                      />
-                    ) : (
-                      <p className="text-sm text-muted-foreground">{selectedMember.email}</p>
-                    )}
+                    {isEditing ? <Input type="email" value={editedMember.email} onChange={(e) => setEditedMember({...editedMember, email: e.target.value})} /> : <p className="text-sm text-muted-foreground">{selectedMember.email}</p>}
                   </div>
                   <div>
                     <Label>Phone</Label>
-                    {isEditing ? (
-                      <Input
-                        value={editedMember.phone}
-                        onChange={(e) => setEditedMember({...editedMember, phone: e.target.value})}
-                      />
-                    ) : (
-                      <p className="text-sm text-muted-foreground">{selectedMember.phone}</p>
-                    )}
+                    {isEditing ? <Input value={editedMember.phone} onChange={(e) => setEditedMember({...editedMember, phone: e.target.value})} /> : <p className="text-sm text-muted-foreground">{selectedMember.phone}</p>}
                   </div>
                 </div>
                 <div>
                   <Label>Address</Label>
-                  {isEditing ? (
-                    <Textarea
-                      value={editedMember.address || ''}
-                      onChange={(e) => setEditedMember({...editedMember, address: e.target.value})}
-                      rows={2}
-                    />
-                  ) : (
-                    <p className="text-sm text-muted-foreground">{selectedMember.address || 'Not provided'}</p>
-                  )}
-                </div>
-                <div>
-                  <Label>Emergency Contact</Label>
-                  {isEditing ? (
-                    <Input
-                      value={editedMember.emergencyContact || ''}
-                      onChange={(e) => setEditedMember({...editedMember, emergencyContact: e.target.value})}
-                    />
-                  ) : (
-                    <p className="text-sm text-muted-foreground">{selectedMember.emergencyContact || 'Not provided'}</p>
-                  )}
+                  {isEditing ? <Textarea value={editedMember.address || ''} onChange={(e) => setEditedMember({...editedMember, address: e.target.value})} rows={2} /> : <p className="text-sm text-muted-foreground">{selectedMember.address || 'Not provided'}</p>}
                 </div>
               </div>
 
-              {/* Membership Information */}
               <div className="grid gap-4">
                 <h4 className="font-medium">Membership Information</h4>
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div>
                     <Label>Amount</Label>
-                    <p className="text-sm text-neon-green font-medium">${selectedMember.amount}</p>
+                    <p className="text-sm text-neon-green font-medium">{formatCurrencyINR(selectedMember.amount)}</p>
                   </div>
                   <div>
                     <Label>Start Date</Label>
@@ -715,30 +816,12 @@ export function MembershipManagement() {
                     <Label>End Date</Label>
                     <p className="text-sm text-muted-foreground">{selectedMember.endDate ? new Date(selectedMember.endDate).toLocaleDateString() : 'N/A'}</p>
                   </div>
-                  <div>
-                    <Label>Join Date</Label>
-                    <p className="text-sm text-muted-foreground">{selectedMember.joinDate ? new Date(selectedMember.joinDate).toLocaleDateString() : 'N/A'}</p>
-                  </div>
-                  <div>
-                    <Label>Last Payment</Label>
-                    <p className="text-sm text-muted-foreground">{selectedMember.lastPayment ? new Date(selectedMember.lastPayment).toLocaleDateString() : 'N/A'}</p>
-                  </div>
                 </div>
               </div>
 
-              {/* Notes */}
               <div>
                 <Label>Notes</Label>
-                {isEditing ? (
-                  <Textarea
-                    value={editedMember.notes || ''}
-                    onChange={(e) => setEditedMember({...editedMember, notes: e.target.value})}
-                    rows={3}
-                    placeholder="Add notes about this member..."
-                  />
-                ) : (
-                  <p className="text-sm text-muted-foreground">{selectedMember.notes || 'No notes available'}</p>
-                )}
+                {isEditing ? <Textarea value={editedMember.notes || ''} onChange={(e) => setEditedMember({...editedMember, notes: e.target.value})} rows={3} /> : <p className="text-sm text-muted-foreground">{selectedMember.notes || 'No notes available'}</p>}
               </div>
             </div>
           )}
@@ -746,32 +829,22 @@ export function MembershipManagement() {
           <DialogFooter>
             {isEditing ? (
               <div className="flex gap-2">
-                <Button variant="outline" onClick={handleCancelEdit}>
-                  <X className="w-4 h-4 mr-2" />
-                  Cancel
-                </Button>
-                <Button onClick={handleSaveProfile} className="bg-gradient-to-r from-neon-green to-neon-blue text-white" disabled={loading}>
-                  <Save className="w-4 h-4 mr-2" />
-                  Save Changes
-                </Button>
+                <Button variant="outline" onClick={handleCancelEdit}><X className="w-4 h-4 mr-2" />Cancel</Button>
+                <Button onClick={handleSaveProfile} className="bg-gradient-to-r from-neon-green to-neon-blue text-white" disabled={loading}><Save className="w-4 h-4 mr-2" />Save Changes</Button>
               </div>
             ) : (
-              <Button variant="outline" onClick={() => setIsProfileOpen(false)}>
-                Close
-              </Button>
+              <Button variant="outline" onClick={() => setIsProfileOpen(false)}>Close</Button>
             )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Assign Membership Dialog (scrollable) */}
+      {/* Assign Membership Dialog */}
       <Dialog open={isAssignOpen} onOpenChange={setIsAssignOpen}>
-        <DialogContent className="sm:max-w-[520px] max-w-[95vw] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[600px] max-w-[95vw] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Assign Membership</DialogTitle>
-            <DialogDescription>
-              Assign a membership plan to {assignMember?.name}
-            </DialogDescription>
+            <div className="text-sm text-muted-foreground">Assign a membership plan to {assignMember?.name}</div>
           </DialogHeader>
 
           <div className="grid gap-4 py-4 px-1 sm:px-2">
@@ -783,20 +856,34 @@ export function MembershipManagement() {
                 </SelectTrigger>
                 <SelectContent>
                   {membershipOptions.map((m: any) => (
-                    <SelectItem key={m.id} value={m.id}>{m.name} {m.price ? `- $${m.price}` : ''}</SelectItem>
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.name} {m.price ? `- ${formatCurrencyINR(m.price)}` : ''}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
+            {activeMembershipInfo && (
+              <div className="p-3 rounded-md bg-yellow-50 border border-yellow-200 text-sm">
+                <div className="font-medium">Active membership detected</div>
+                <div>{activeMembershipInfo.membership_name} — ends {formatPretty(activeMembershipInfo.end_date)}</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  New membership default start set to the next available day after current membership end. You can edit the start date if you wish.
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label>Start Date</Label>
                 <Input type="date" value={assignStart} onChange={(e) => setAssignStart(e.target.value)} />
+                <p className="text-xs text-muted-foreground mt-1">Start is automatically set to today or next available day after current membership end.</p>
               </div>
               <div>
                 <Label>End Date</Label>
                 <Input type="date" value={assignEnd} onChange={(e) => setAssignEnd(e.target.value)} />
+                <p className="text-xs text-muted-foreground mt-1">End date is auto-calculated from the selected plan's duration (editable).</p>
               </div>
             </div>
 
@@ -834,19 +921,16 @@ export function MembershipManagement() {
         </DialogContent>
       </Dialog>
 
-      {/* Billing Management Dialog (scrollable + membership list scrollable) */}
+      {/* Billing Management Dialog */}
       <Dialog open={isBillingOpen} onOpenChange={setIsBillingOpen}>
         <DialogContent className="sm:max-w-[600px] max-w-[95vw] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Billing Management</DialogTitle>
-            <DialogDescription>
-              Manage payment and billing information for {billingMember?.name}
-            </DialogDescription>
+            <div className="text-sm text-muted-foreground">Manage payment and billing information for {billingMember?.name}</div>
           </DialogHeader>
 
           {billingMember && (
             <div className="grid gap-6 py-4 px-1 sm:px-2">
-              {/* Member Info */}
               <div className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg">
                 <div className="w-12 h-12 bg-gradient-to-r from-neon-green to-neon-blue rounded-full flex items-center justify-center text-white">
                   {billingMember.name.charAt(0)}
@@ -856,14 +940,11 @@ export function MembershipManagement() {
                 </div>
               </div>
 
-              {/* Memberships for this member (from membermembershipService) */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="font-medium">Memberships</h4>
-                  {/* small "Assign" quick action here too */}
                   <Button size="sm" variant="ghost" onClick={() => openAssignDialog(billingMember)}>
-                    <CreditCard className="w-4 h-4 mr-2" />
-                    Assign
+                    <CreditCard className="w-4 h-4 mr-2" />Assign
                   </Button>
                 </div>
 
@@ -872,7 +953,6 @@ export function MembershipManagement() {
                 ) : memberMemberships.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No membership records found for this member.</p>
                 ) : (
-                  // make the list itself scrollable so dialog stays constrained
                   <div className="space-y-2 max-h-56 overflow-auto pr-2">
                     {memberMemberships.map((mm) => (
                       <div key={mm.id} className="p-3 border rounded-lg">
@@ -893,45 +973,48 @@ export function MembershipManagement() {
                 )}
               </div>
 
-              {/* Payment Information */}
+              {/* Payment Info & Status */}
               <div className="space-y-4">
                 <h4 className="font-medium">Payment Information</h4>
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div>
                     <Label>Current Plan</Label>
-                    <p className="text-sm text-muted-foreground">{billingMember.planType}</p>
+                    <p className="text-sm text-muted-foreground">{billingMember.planType || '—'}</p>
                   </div>
                   <div>
                     <Label>Amount</Label>
-                    <p className="text-sm text-neon-green font-medium">${billingMember.amount}</p>
+                    <p className="text-sm text-neon-green font-medium">{formatCurrencyINR(billingMember.amount)}</p>
                   </div>
                   <div>
                     <Label>Last Payment</Label>
-                    <p className="text-sm text-muted-foreground">
-                      {billingMember.lastPayment ? new Date(billingMember.lastPayment).toLocaleDateString() : 'N/A'}
-                    </p>
+                    <p className="text-sm text-muted-foreground">{billingMember.lastPayment ? formatPretty(billingMember.lastPayment) : 'N/A'}</p>
                   </div>
                   <div>
                     <Label>Next Billing</Label>
-                    <p className="text-sm text-muted-foreground">
-                      {billingMember.nextBilling ? new Date(billingMember.nextBilling).toLocaleDateString() : 'N/A'}
-                    </p>
+                    <p className="text-sm text-muted-foreground">{billingMember.nextBilling ? formatPretty(billingMember.nextBilling) : 'N/A'}</p>
                   </div>
                 </div>
               </div>
 
-              {/* Payment Status */}
+              {/* Payment Status determination:
+                  - If there are active memberships -> show Active and list
+                  - If no active memberships -> show Expired / Not paid */}
               <div className="space-y-3">
                 <h4 className="font-medium">Payment Status</h4>
                 <div className="flex items-center justify-between p-3 border rounded-lg">
                   <div className="flex items-center gap-2">
-                    {getStatusBadge(billingMember.status)}
+                    {billingHasActive ? getStatusBadge('active') : getStatusBadge('expired')}
                     <span className="text-sm">
-                      {billingMember.status === 'active' && 'Payment up to date'}
-                      {billingMember.status === 'expired' && 'Payment required - membership expired'}
-                      {billingMember.status === 'pending' && 'Payment pending verification'}
+                      {billingHasActive
+                        ? 'Payment up to date (active membership present)'
+                        : 'No active membership — expired or not paid'}
                     </span>
                   </div>
+                  {billingHasActive ? (
+                    <div className="text-sm text-muted-foreground">
+                      Active memberships: {billingActiveItems.length}
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -939,29 +1022,14 @@ export function MembershipManagement() {
               <div className="space-y-3">
                 <h4 className="font-medium">Quick Actions</h4>
                 <div className="grid gap-2">
-                  <Button
-                    variant="outline"
-                    className="justify-start"
-                    onClick={() => openAssignDialog(billingMember)}
-                  >
-                    <CreditCard className="w-4 h-4 mr-2" />
-                    Assign Membership
+                  <Button variant="outline" className="justify-start" onClick={() => openAssignDialog(billingMember)}>
+                    <CreditCard className="w-4 h-4 mr-2" />Assign Membership
                   </Button>
-                  <Button
-                    variant="outline"
-                    className="justify-start"
-                    onClick={() => console.log('Sending payment reminder to:', billingMember.email)}
-                  >
-                    <Mail className="w-4 h-4 mr-2" />
-                    Send Payment Reminder
+                  <Button variant="outline" className="justify-start" onClick={() => console.log('Send reminder to:', billingMember.email)}>
+                    <Mail className="w-4 h-4 mr-2" />Send Payment Reminder
                   </Button>
-                  <Button
-                    variant="outline"
-                    className="justify-start"
-                    onClick={() => console.log('Updating billing info for:', billingMember.name)}
-                  >
-                    <Calendar className="w-4 h-4 mr-2" />
-                    Update Billing Date
+                  <Button variant="outline" className="justify-start" onClick={() => console.log('Update billing date for:', billingMember.name)}>
+                    <Calendar className="w-4 h-4 mr-2" />Update Billing Date
                   </Button>
                 </div>
               </div>
@@ -969,31 +1037,19 @@ export function MembershipManagement() {
           )}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsBillingOpen(false)}>
-              Close
-            </Button>
-            <Button
-              onClick={handleUpdatePayment}
-              className="bg-gradient-to-r from-neon-green to-neon-blue text-white"
-            >
-              Update Payment
-            </Button>
+            <Button variant="outline" onClick={() => setIsBillingOpen(false)}>Close</Button>
+            <Button onClick={handleUpdatePayment} className="bg-gradient-to-r from-neon-green to-neon-blue text-white">Update Payment</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Search and Filter - unchanged */}
+      {/* Search & Filter */}
       <Card className="border-border/50">
         <CardContent className="p-6">
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-              <Input
-                placeholder="Search members by name or email..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
+              <Input placeholder="Search members by name or email..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10" />
             </div>
             <div className="flex gap-2">
               <Select value={selectedFilter} onValueChange={setSelectedFilter}>
@@ -1013,14 +1069,13 @@ export function MembershipManagement() {
         </CardContent>
       </Card>
 
-      {/* Members Table */}
+      {/* Members table */}
       <Card className="border-border/50">
         <CardHeader>
           <CardTitle>Members ({filteredMembers.length})</CardTitle>
-          <CardDescription>
-            {selectedFilter === 'all' ? 'All registered members' : `Members with ${selectedFilter} status`}
-          </CardDescription>
+          <CardDescription>{selectedFilter === 'all' ? 'All registered members' : `Members with ${selectedFilter} status`}</CardDescription>
         </CardHeader>
+
         <CardContent>
           <div className="rounded-md border border-border overflow-hidden">
             <Table>
@@ -1047,74 +1102,32 @@ export function MembershipManagement() {
                         </div>
                       </div>
                     </TableCell>
+
                     <TableCell className="hidden sm:table-cell">
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-sm">
-                          <Mail className="w-3 h-3" />
-                          {member.email}
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Phone className="w-3 h-3" />
-                          {member.phone}
-                        </div>
+                        <div className="flex items-center gap-2 text-sm"><Mail className="w-3 h-3" />{member.email}</div>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground"><Phone className="w-3 h-3" />{member.phone}</div>
                       </div>
                     </TableCell>
+
                     <TableCell className="hidden md:table-cell">
                       <div className="space-y-1">
                         <div className="text-sm">{member.startDate ? new Date(member.startDate).toLocaleDateString() : 'N/A'}</div>
-                        <div className="text-sm text-muted-foreground">to {member.endDate ? new Date(member.endDate).toLocaleDateString() : 'N/A'}</div>
                       </div>
                     </TableCell>
+
                     <TableCell>{getStatusBadge(member.status)}</TableCell>
+
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleViewProfile(member)}
-                          className="hover:bg-neon-green/10 hover:text-neon-green"
-                        >
-                          <User className="w-4 h-4" />
-                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => handleViewProfile(member)} className="hover:bg-neon-green/10 hover:text-neon-green"><User className="w-4 h-4" /></Button>
 
-                        {/* open billing view */}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleViewBilling(member)}
-                          className="hover:bg-neon-blue/10 hover:text-neon-blue"
-                        >
-                          <CreditCard className="w-4 h-4" />
-                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => handleViewBilling(member)} className="hover:bg-neon-blue/10 hover:text-neon-blue"><CreditCard className="w-4 h-4" /></Button>
 
-                        {/* NEW: quick Assign membership (opens assign dialog) */}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => openAssignDialog(member)}
-                          className="hover:bg-neon-green/10 hover:text-neon-green"
-                          title="Assign membership / payment"
-                        >
-                          <CreditCard className="w-4 h-4" />
-                        </Button>
-
-                        {/* Show Delete if active, Restore if not active */}
                         {member.is_active === false || member.status === 'expired' ? (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleRestore(member.id)}
-                            className="text-green-600 hover:bg-neon-green/10"
-                          >
-                            Restore
-                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => handleRestore(member.id)} className="text-green-600 hover:bg-neon-green/10">Restore</Button>
                         ) : (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDelete(member.id)}
-                            className="text-red-500 hover:bg-red-500/10"
-                          >
+                          <Button variant="ghost" size="sm" onClick={() => handleDelete(member.id)} className="text-red-500 hover:bg-red-500/10">
                             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18" /><path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" /><path d="M10 11v6M14 11v6M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" /></svg>
                           </Button>
                         )}
@@ -1128,41 +1141,29 @@ export function MembershipManagement() {
         </CardContent>
       </Card>
 
-      {/* Quick Stats (unchanged) */}
+      {/* Quick stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="border-border/50">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Renewal This Week</CardTitle>
-          </CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">Renewal This Week</CardTitle></CardHeader>
           <CardContent>
             <div className="text-2xl text-neon-green">23 members</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Estimated revenue: $3,450
-            </p>
+            <p className="text-xs text-muted-foreground mt-1">Estimated revenue: {formatCurrencyINR(3450)}</p>
           </CardContent>
         </Card>
 
         <Card className="border-border/50">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">New Members (30 days)</CardTitle>
-          </CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">New Members (30 days)</CardTitle></CardHeader>
           <CardContent>
             <div className="text-2xl text-neon-blue">18 members</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              +15% from last month
-            </p>
+            <p className="text-xs text-muted-foreground mt-1">+15% from last month</p>
           </CardContent>
         </Card>
 
         <Card className="border-border/50">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Retention Rate</CardTitle>
-          </CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">Retention Rate</CardTitle></CardHeader>
           <CardContent>
             <div className="text-2xl text-purple-400">87%</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Above industry average
-            </p>
+            <p className="text-xs text-muted-foreground mt-1">Above industry average</p>
           </CardContent>
         </Card>
       </div>
