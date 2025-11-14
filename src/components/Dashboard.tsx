@@ -361,7 +361,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   <SpeedometerGauge
                     value={latestRevenue}
                     max={latestRevenue + latestPending || 1}
-                    size={160}
+                    size={250}
                     arcColor={colors.revenueBar}
                     trackColor={isDark ? "#0f1724" : "#e6eef8"}
                     needleColor={isDark ? "#e6eef8" : "#0f1724"}
