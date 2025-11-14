@@ -56,6 +56,104 @@ function IconBubble({ children, className = "", ariaLabel = "" }: any) {
   );
 }
 
+/* ---------- Speedometer (half / semicircle) gauge ---------- */
+function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
+  const a = ((angleDeg - 90) * Math.PI) / 180.0;
+  return {
+    x: cx + r * Math.cos(a),
+    y: cy + r * Math.sin(a),
+  };
+}
+function describeArc(cx: number, cy: number, r: number, startAngle: number, endAngle: number) {
+  const start = polarToCartesian(cx, cy, r, endAngle);
+  const end = polarToCartesian(cx, cy, r, startAngle);
+  const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
+  return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`;
+}
+
+type SpeedometerProps = {
+  value: number;
+  max: number;
+  size?: number;
+  arcColor?: string;
+  trackColor?: string;
+  needleColor?: string;
+  ticks?: number;
+};
+
+function SpeedometerGauge({
+  value,
+  max,
+  size = 160,
+  arcColor = "#10b981",
+  trackColor = "#e6eef8",
+  needleColor = "#0f1724",
+  ticks = 5,
+}: SpeedometerProps) {
+  const total = Math.max(0, Number(max) || 0);
+  const val = Math.max(0, Number(value) || 0);
+  const percent = total === 0 ? 0 : Math.min(1, val / total);
+
+  const w = size;
+  const h = Math.round(size * 0.6);
+  const cx = w / 2;
+  const cy = h;
+  const radius = Math.min(w / 2 - 8, h - 8);
+
+  const startAngle = -120;
+  const endAngle = 120;
+  const sweep = endAngle - startAngle;
+  const filledAngle = startAngle + sweep * percent;
+
+  const trackPath = describeArc(cx, cy, radius, startAngle, endAngle);
+  const filledPath = describeArc(cx, cy, radius, startAngle, filledAngle);
+
+  const tickAngles = Array.from({ length: ticks }, (_, i) => startAngle + (sweep * i) / (ticks - 1));
+
+  const needleLength = radius - 6;
+  const needleX1 = cx;
+  const needleY1 = cy;
+  const needleX2 = cx;
+  const needleY2 = cy - needleLength;
+
+  const pctText = Math.round(percent * 100);
+
+  return (
+    <div className="flex flex-col items-center" role="img" aria-label={`Gauge ${pctText}%`}>
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="block">
+        <path d={trackPath} fill="none" stroke={trackColor} strokeWidth={8} strokeLinecap="round" />
+        <path d={filledPath} fill="none" stroke={arcColor} strokeWidth={8} strokeLinecap="round" />
+
+        {tickAngles.map((ang, idx) => {
+          const outer = polarToCartesian(cx, cy, radius + 4, ang);
+          const inner = polarToCartesian(cx, cy, radius - 8, ang);
+          return <line key={idx} x1={outer.x} y1={outer.y} x2={inner.x} y2={inner.y} stroke="#94a3b8" strokeWidth={2} strokeLinecap="round" />;
+        })}
+
+        <g
+          style={{
+            transformOrigin: `${cx}px ${cy}px`,
+            transform: `rotate(${filledAngle}deg)`,
+            transition: "transform 0.6s cubic-bezier(.2,.9,.2,1)",
+          }}
+        >
+          <line x1={needleX1} y1={needleY1} x2={needleX2} y2={needleY2} stroke={needleColor} strokeWidth={2.5} strokeLinecap="round" />
+          <circle cx={cx} cy={cy} r={5} fill={needleColor} stroke="white" strokeWidth={1} />
+        </g>
+
+        <path d={describeArc(cx, cy, radius - 12, startAngle, endAngle)} fill="none" stroke="rgba(0,0,0,0.03)" strokeWidth={8} strokeLinecap="round" />
+      </svg>
+
+      <div className="mt-2 text-center">
+        <div className="text-sm text-muted-foreground">Revenue</div>
+        <div className="text-base font-semibold">₹{val.toLocaleString()}</div>
+        <div className="text-xs text-muted-foreground">{pctText}% of total</div>
+      </div>
+    </div>
+  );
+}
+/* ---------- end SpeedometerGauge ---------- */
+
 export function Dashboard({ onNavigate }: DashboardProps) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -98,12 +196,12 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   // explicit color set (no palette object usage)
   const colors = {
-    revenue: "#34d399", // green
-    pending: "#f87171", // red/pink
+    revenue: "#34d399",
+    pending: "#f87171",
     revenueBar: "#10b981",
     pendingBar: "#ef4444",
-    linePrimary: "#3b82f6", // blue
-    lineSecondary: "#8b5cf6", // purple
+    linePrimary: "#3b82f6",
+    lineSecondary: "#8b5cf6",
     gridLight: "#e6eef8",
     gridDark: "#15202b",
     textLight: "#0f1724",
@@ -137,7 +235,6 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     );
   }
 
-  // a small helper to reduce chart clutter on mobile
   const sharedTooltipStyle = {
     backgroundColor: isDark ? "#0b1220" : "#ffffff",
     border: `1px solid ${isDark ? colors.gridDark : colors.gridLight}`,
@@ -146,10 +243,17 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     boxShadow: isDark ? "0 2px 10px rgba(0,0,0,0.6)" : "0 6px 18px rgba(15,23,42,0.06)",
   };
 
-  // helpers for mobile simplified views
   const latestRevenue = Number(data.monthlyRevenue ?? 0);
   const latestPending = Number(data.pendingDues ?? 0);
   const latestMonthJoins = monthlyJoinsWithTarget.length > 0 ? monthlyJoinsWithTarget[monthlyJoinsWithTarget.length - 1] : null;
+
+  // computed border style for the stat cards (5px)
+  const statCardBorderStyle = {
+    borderWidth: 4,
+    borderStyle: "solid",
+    borderColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(15,23,42,0.06)",
+    borderRadius: 20,
+  } as React.CSSProperties;
 
   return (
     <div className="space-y-6 px-2 md:px-0">
@@ -164,78 +268,83 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         <p className="text-muted-foreground mt-1">Welcome back! Here’s your performance overview.</p>
       </div>
 
+      {/* STAT CARDS: each card uses inline style to increase border to 5px */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
-  {[
-    {
-      title: "Active Members",
-      value: data.activeMembers,
-      icon: <Users className="h-5 w-5" style={{ color: "#059669" }} />,
-      aria: "Active Members",
-      bubble: "bg-gradient-to-br from-green-50 to-emerald-100",
-    },
-    {
-      title: "Upcoming Renewals",
-      value: data.upcomingRenewals,
-      icon: <Calendar className="h-5 w-5" style={{ color: "#2563eb" }} />,
-      aria: "Upcoming Renewals",
-      bubble: "bg-gradient-to-br from-blue-50 to-cyan-100",
-    },
-    {
-      title: "Pending Dues",
-      value: `₹${Number(data.pendingDues ?? 0).toLocaleString()}`,
-      icon: <AlertTriangle className="h-5 w-5" style={{ color: "#d97706" }} />,
-      aria: "Pending Dues",
-      bubble: "bg-gradient-to-br from-yellow-50 to-orange-100",
-    },
-    {
-      title: "Monthly Revenue",
-      value: `₹${Number(data.monthlyRevenue ?? 0).toLocaleString()}`,
-      icon: <DollarSign className="h-5 w-5" style={{ color: "#059669" }} />,
-      aria: "Monthly Revenue",
-      bubble: "bg-gradient-to-br from-emerald-50 to-green-100",
-    },
-  ].map((item, i) => (
-    <motion.div key={i} whileHover={{ y: -6 }} transition={{ duration: 0.25 }} className="h-full">
-      <Card className="h-full border-2 border-border/10 dark:border-border/80 hover:shadow-2xl transition-all duration-300 flex flex-col">
-        <CardHeader className="flex items-center justify-between pb-2">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <IconBubble className={item.bubble} ariaLabel={item.aria}>
-              {item.icon}
-            </IconBubble>
-            <span>{item.title}</span>
-          </CardTitle>
-        </CardHeader>
+        {[
+          {
+            title: "Active Members",
+            value: data.activeMembers,
+            icon: <Users className="h-5 w-5" style={{ color: "#059669" }} />,
+            aria: "Active Members",
+            bubble: "bg-gradient-to-br from-green-50 to-emerald-100",
+          },
+          {
+            title: "Upcoming Renewals",
+            value: data.upcomingRenewals,
+            icon: <Calendar className="h-5 w-5" style={{ color: "#2563eb" }} />,
+            aria: "Upcoming Renewals",
+            bubble: "bg-gradient-to-br from-blue-50 to-cyan-100",
+          },
+          {
+            title: "Pending Dues",
+            value: `₹${Number(data.pendingDues ?? 0).toLocaleString()}`,
+            icon: <AlertTriangle className="h-5 w-5" style={{ color: "#d97706" }} />,
+            aria: "Pending Dues",
+            bubble: "bg-gradient-to-br from-yellow-50 to-orange-100",
+          },
+          {
+            title: "Monthly Revenue",
+            value: `₹${Number(data.monthlyRevenue ?? 0).toLocaleString()}`,
+            icon: <DollarSign className="h-5 w-5" style={{ color: "#059669" }} />,
+            aria: "Monthly Revenue",
+            bubble: "bg-gradient-to-br from-emerald-50 to-green-100",
+          },
+        ].map((item, i) => (
+          <motion.div key={i} whileHover={{ y: -6 }} transition={{ duration: 0.25 }} className="h-full">
+            {/* inline style used to reliably increase border to 5px and adapt color for dark/light */}
+            <Card
+              style={statCardBorderStyle}
+              className="h-full hover:shadow-2xl transition-all duration-300 flex flex-col bg-transparent"
+            >
+              <CardHeader className="flex items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <IconBubble className={item.bubble} ariaLabel={item.aria}>
+                    {item.icon}
+                  </IconBubble>
+                  <span>{item.title}</span>
+                </CardTitle>
+              </CardHeader>
 
-        <CardContent className="flex-grow flex items-center justify-between">
-          <div className="text-2xl sm:text-3xl font-bold">{item.value}</div>
+              <CardContent className="flex-grow flex items-center justify-between">
+                <div className="text-2xl sm:text-3xl font-bold">{item.value}</div>
 
-          <motion.div
-            whileHover={{ scale: 1.08 }}
-            className="text-xs text-muted-foreground text-right sm:text-sm"
-          >
-            <span className="hidden sm:inline">
-              {i === 0
-                ? "Active right now"
-                : i === 1
-                ? "Next 7 days"
-                : i === 2
-                ? "Unpaid memberships"
-                : "Revenue this month"}
-            </span>
-            <span className="sm:hidden text-[11px] block">
-              {i === 0 ? "Active" : i === 1 ? "Renewals" : i === 2 ? "Dues" : "Revenue"}
-            </span>
+                <motion.div
+                  whileHover={{ scale: 1.08 }}
+                  className="text-xs text-muted-foreground text-right sm:text-sm"
+                >
+                  <span className="hidden sm:inline">
+                    {i === 0
+                      ? "Active right now"
+                      : i === 1
+                      ? "Next 7 days"
+                      : i === 2
+                      ? "Unpaid memberships"
+                      : "Revenue this month"}
+                  </span>
+                  <span className="sm:hidden text-[11px] block">
+                    {i === 0 ? "Active" : i === 1 ? "Renewals" : i === 2 ? "Dues" : "Revenue"}
+                  </span>
+                </motion.div>
+              </CardContent>
+            </Card>
           </motion.div>
-        </CardContent>
-      </Card>
-    </motion.div>
-  ))}
-</div>
+        ))}
+      </div>
 
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}>
-          <Card className="border-border/50 hover:shadow-xl transition-all">
+      {/* Remaining layout (Revenue Overview, Top Plans, Monthly New Joins) unchanged */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" >
+        <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} >
+          <Card className="border-border/50 hover:shadow-xl transition-all" style={statCardBorderStyle}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <IconBubble className="bg-gradient-to-br from-emerald-100 to-green-50" ariaLabel="Revenue Overview">
@@ -246,32 +355,18 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               <CardDescription>Track monthly revenue vs pending dues</CardDescription>
             </CardHeader>
             <CardContent>
-              {/* MOBILE: simplified summary instead of full bar chart */}
+              {/* MOBILE: half speedometer gauge */}
               {isMobile ? (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-sm text-muted-foreground">This Month</div>
-                      <div className="text-lg font-semibold">₹{latestRevenue.toLocaleString()}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm text-muted-foreground">Pending</div>
-                      <div className="text-lg font-semibold" style={{ color: "#d97706" }}>₹{latestPending.toLocaleString()}</div>
-                    </div>
-                  </div>
-
-                  {/* small ratio bar */}
-                  <div className="w-full bg-border/30 rounded-full h-3 overflow-hidden">
-                    <div
-                      style={{
-                        width: `${latestRevenue + latestPending === 0 ? 0 : Math.round((latestRevenue / (latestRevenue + latestPending)) * 100)}%`,
-                        background: colors.revenue
-                      }}
-                      className="h-3 rounded-full"
-                    />
-                  </div>
-
-                  <div className="text-xs text-muted-foreground">Tap into the desktop view to see full monthly breakdown.</div>
+                <div className="py-2 flex justify-center">
+                  <SpeedometerGauge
+                    value={latestRevenue}
+                    max={latestRevenue + latestPending || 1}
+                    size={160}
+                    arcColor={colors.revenueBar}
+                    trackColor={isDark ? "#0f1724" : "#e6eef8"}
+                    needleColor={isDark ? "#e6eef8" : "#0f1724"}
+                    ticks={5}
+                  />
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height={260}>
@@ -291,7 +386,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         </motion.div>
 
         <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }}>
-          <Card className="border-border/50 hover:shadow-xl transition-all">
+          <Card className="border-border/50 hover:shadow-xl transition-all" style={statCardBorderStyle}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <IconBubble className="bg-gradient-to-br from-indigo-100 to-purple-50" ariaLabel="Top Plans">
@@ -325,7 +420,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       </div>
 
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-        <Card className="border-border/50 hover:shadow-xl transition-all">
+        <Card className="border-border/50 hover:shadow-xl transition-all" style={statCardBorderStyle}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               <IconBubble className="bg-gradient-to-br from-blue-100 to-cyan-50" ariaLabel="Monthly New Joins">
@@ -336,7 +431,6 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             <CardDescription>Track how many members joined each month</CardDescription>
           </CardHeader>
           <CardContent>
-            {/* MOBILE: simplified list instead of full line chart */}
             {isMobile ? (
               <div className="space-y-3">
                 {monthlyJoinsWithTarget.slice(-3).reverse().map((m: any, idx: number) => (
