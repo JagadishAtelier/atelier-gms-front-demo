@@ -312,7 +312,7 @@ export function WorkoutPlans() {
                     </div>
                   </div>
 
-                  <div className="flex gap-2 pt-4 border-t border-border">
+                  {/* <div className="flex gap-2 pt-4 border-t border-border">
                     <Button variant="outline" size="sm" className="flex-1">
                       <MessageSquare className="w-4 h-4 mr-1" />
                       WhatsApp
@@ -321,7 +321,7 @@ export function WorkoutPlans() {
                       <Mail className="w-4 h-4 mr-1" />
                       Email
                     </Button>
-                  </div>
+                  </div> */}
                 </CardContent>
               </Card>
             ))}

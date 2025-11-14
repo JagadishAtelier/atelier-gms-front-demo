@@ -27,6 +27,7 @@ import memberService from '../service/memberService.js';
 import uploadService from '../service/uploadService.js';
 import membermembershipService from '../service/membermembershipService.js';
 import membershipService from '../service/membershipService.js';
+import remainderemailService from '../service/remainderemailService.js'; // <-- added
 
 interface Member {
   id: string;
@@ -105,6 +106,9 @@ export function MembershipManagement() {
   const [assignStatus, setAssignStatus] = useState<'active' | 'expired' | 'cancelled'>('active');
   const [assignLoading, setAssignLoading] = useState(false);
   const [activeMembershipInfo, setActiveMembershipInfo] = useState<any | null>(null);
+
+  // Reminder loading state (billing-only)
+  const [sendingMemberReminder, setSendingMemberReminder] = useState<string | null>(null);
 
   // --- Helpers to normalize various response shapes ---
   const extractListFromResponse = (res: any): any[] => {
@@ -648,6 +652,29 @@ export function MembershipManagement() {
     }
   };
 
+  // --- Billing-only: Send payment reminder by member_id (shows next payment date & current membership) ---
+  const handleSendMemberNextPaymentReminder = async (memberId: string) => {
+    if (!memberId) {
+      toast.error('Member id missing');
+      return;
+    }
+    try {
+      setSendingMemberReminder(memberId);
+      const res = await remainderemailService.sendNextPaymentReminder(memberId); // <-- ensure this exists in service
+      toast.success(res?.message || 'Payment reminder sent');
+
+      // refresh billing panel data for this member if it is open
+      if (billingMember && billingMember.id === memberId) {
+        await handleViewBilling(billingMember);
+      }
+    } catch (err: any) {
+      console.error('Failed to send next payment reminder', err);
+      toast.error(err?.message || err?.data?.message || 'Failed to send reminder');
+    } finally {
+      setSendingMemberReminder(null);
+    }
+  };
+
   const handleUpdatePayment = () => {
     // This is a mock action. Replace with real payment flow.
     console.log('Process payment for:', billingMember?.name);
@@ -1018,16 +1045,25 @@ export function MembershipManagement() {
                 </div>
               </div>
 
-              {/* Quick Actions */}
+              {/* Quick Actions (Billing-only) */}
               <div className="space-y-3">
                 <h4 className="font-medium">Quick Actions</h4>
                 <div className="grid gap-2">
                   <Button variant="outline" className="justify-start" onClick={() => openAssignDialog(billingMember)}>
                     <CreditCard className="w-4 h-4 mr-2" />Assign Membership
                   </Button>
-                  <Button variant="outline" className="justify-start" onClick={() => console.log('Send reminder to:', billingMember.email)}>
-                    <Mail className="w-4 h-4 mr-2" />Send Payment Reminder
+
+                  {/* <--- Billing-only Send Payment Reminder ---> */}
+                  <Button
+                    variant="outline"
+                    className="justify-start"
+                    onClick={() => billingMember?.id && handleSendMemberNextPaymentReminder(billingMember.id)}
+                    disabled={Boolean(sendingMemberReminder) && sendingMemberReminder !== billingMember?.id}
+                  >
+                    <Mail className="w-4 h-4 mr-2" />
+                    {sendingMemberReminder === billingMember?.id ? 'Sending...' : 'Send Payment Reminder'}
                   </Button>
+
                   <Button variant="outline" className="justify-start" onClick={() => console.log('Update billing date for:', billingMember.name)}>
                     <Calendar className="w-4 h-4 mr-2" />Update Billing Date
                   </Button>
