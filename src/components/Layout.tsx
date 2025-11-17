@@ -51,7 +51,7 @@ export function Layout({ children, currentPage, onNavigate, onLogout, theme, onT
 
         {!sideCollapsed && (
           <div>
-            <h2 className="font-semibold text-muted-foreground">Atelier Fitness</h2>
+            <h2 className="font-semibold text-muted-foreground">Atelier Fit</h2>
             <p className="text-sm text-muted-foreground">Gym Management</p>
           </div>
         )}

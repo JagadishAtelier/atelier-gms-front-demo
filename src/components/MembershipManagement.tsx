@@ -824,7 +824,7 @@ export function MembershipManagement() {
 
       {/* Profile dialog */}
       <Dialog open={isProfileOpen} onOpenChange={setIsProfileOpen}>
-        <DialogContent className={`sm:${dialogMaxW} max-w-[95vw] max-h-[90vh] overflow-y-auto`}>
+        <DialogContent className={`max-w-[95vw] ${dialogMaxW} max-h-[90vh] overflow-y-auto`}>
           <DialogHeader className={`${dialogPadding}`}>
             <DialogTitle className="flex items-center justify-between">
               Member Profile

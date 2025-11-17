@@ -1,3 +1,4 @@
+// src/components/WorkoutPlans.tsx
 import React, { useEffect, useState } from "react";
 import {
   Card,
@@ -20,7 +21,6 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -42,7 +42,8 @@ import {
   User,
   Target,
 } from "lucide-react";
-import planService from "../service/planService"; // adjust import path if needed
+import planService from "../service/planService"; // adjust path if needed
+import BASE_API from "../api/baseurl.js";
 
 interface PlanUI {
   id: string;
@@ -54,6 +55,7 @@ interface PlanUI {
   assignedTo: string[];
   createdDate: string;
   goals: string[];
+  pdfUrl?: string | null;
 }
 
 export function WorkoutPlans() {
@@ -72,7 +74,14 @@ export function WorkoutPlans() {
     goals: "",
   });
 
-  // Helpers to convert between backend <-> UI shapes
+  // file state
+  const [imageFile, setImageFile] = useState<File | null>(null);
+
+  // PDF modal state
+  const [pdfModalOpen, setPdfModalOpen] = useState(false);
+  const [pdfToView, setPdfToView] = useState<string | null>(null);
+  const [pdfTitle, setPdfTitle] = useState<string>("");
+
   const backendTypeFromUI = (t: "workout" | "diet") =>
     t === "workout" ? "Workout Plan" : "Diet Plan";
 
@@ -80,22 +89,18 @@ export function WorkoutPlans() {
     bt === "Diet Plan" ? "diet" : "workout";
 
   const backendDifficultyFromUI = (d: string) =>
-    d.charAt(0).toUpperCase() + d.slice(1); // beginner -> Beginner
+    d.charAt(0).toUpperCase() + d.slice(1);
 
   const uiDifficultyFromBackend = (d?: string) =>
     d ? d.toLowerCase() : "beginner";
 
-  // attempt to robustly extract an array of plans from various wrapper shapes
   const extractPlansArray = (res: any): any[] => {
     if (!res) return [];
-    // res might already be the axios response.data (your planService returns res.data)
-    // Example shape: { status, message, data: { total, currentPage, totalPages, data: [ ... ] } }
     if (Array.isArray(res)) return res;
     if (Array.isArray(res.data)) return res.data;
     if (res.data && Array.isArray(res.data.data)) return res.data.data;
     if (res.data && Array.isArray(res.data.rows)) return res.data.rows;
     if (res.rows && Array.isArray(res.rows)) return res.rows;
-    // fallback: sometimes service returns { data: { data: [...] } }
     if (res.data?.data && Array.isArray(res.data.data)) return res.data.data;
     return [];
   };
@@ -104,12 +109,10 @@ export function WorkoutPlans() {
     if (!rawGoals) return [];
     if (Array.isArray(rawGoals)) return rawGoals;
     if (typeof rawGoals === "string") {
-      // try parse JSON string like '["Wight loss","Fit"]'
       try {
         const parsed = JSON.parse(rawGoals);
         if (Array.isArray(parsed)) return parsed.map((g) => String(g).trim());
       } catch (e) {
-        // if not JSON, try comma-split fallback
         return rawGoals.split(",").map((g: string) => g.trim()).filter(Boolean);
       }
     }
@@ -117,6 +120,9 @@ export function WorkoutPlans() {
   };
 
   const normalizePlan = (raw: any): PlanUI => {
+    // accept multiple names for PDF field
+    const pdfUrl = raw.pdf_url || raw.pdfUrl || raw.pdf || raw.file || null;
+
     return {
       id: raw.id,
       title: raw.title || raw.name || "Untitled plan",
@@ -124,10 +130,10 @@ export function WorkoutPlans() {
       description: raw.Description || raw.description || "",
       duration: raw.duration || "",
       difficulty: uiDifficultyFromBackend(raw.difficulty),
-      // backend doesn't provide assigned members in example — safe default []
       assignedTo: Array.isArray(raw.assignedTo) ? raw.assignedTo : [],
       createdDate: raw.createdAt || raw.created_date || raw.created_date_time || "",
       goals: safeParseGoals(raw.goals),
+      pdfUrl,
     };
   };
 
@@ -138,10 +144,8 @@ export function WorkoutPlans() {
       const options: any = {};
       if (activeTab === "workout") options.plan_type = "Workout Plan";
       if (activeTab === "diet") options.plan_type = "Diet Plan";
-      // fetch from service (returns axios response.data)
-      const res = await planService.getPlans(options);
 
-      // extract array robustly based on returned shape
+      const res = await planService.getPlans(options);
       const dataArray = extractPlansArray(res);
 
       const normalized: PlanUI[] = dataArray.map(normalizePlan);
@@ -157,32 +161,70 @@ export function WorkoutPlans() {
 
   useEffect(() => {
     fetchPlans();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
-  const handleCreatePlan = async () => {
-    if (!newPlan.title.trim()) {
-      return alert("Please add a plan title");
-    }
-    if (!newPlan.duration.trim()) {
-      return alert("Please add duration");
+  /**
+   * resolveUrl:
+   * - if url is absolute -> return as-is
+   * - if url is relative (starts with /) -> try to use BASE_API origin if available,
+   *   else fallback to window.location.origin
+   * - if url is relative without leading slash -> prefix with '/' + origin
+   */
+  const resolveUrl = (url?: string | null) => {
+    if (!url) return null;
+    // already absolute
+    if (/^https?:\/\//i.test(url)) return url;
+
+    // compute origin: prefer BASE_API origin (if BASE_API is absolute), else window.location.origin
+    let origin = window.location.origin;
+    try {
+      if (BASE_API && /^https?:\/\//i.test(BASE_API)) {
+        const tmp = new URL(BASE_API);
+        origin = tmp.origin;
+      }
+    } catch (e) {
+      // ignore - fallback to window.location.origin
+      origin = window.location.origin;
     }
 
-    const payload = {
-      title: newPlan.title.trim(),
-      plan_type: backendTypeFromUI(newPlan.type),
-      difficulty: backendDifficultyFromUI(newPlan.difficulty),
-      duration: newPlan.duration.trim(),
-      goals: newPlan.goals
-        .split(",")
-        .map((g) => g.trim())
-        .filter(Boolean),
-      Description: newPlan.description?.trim() || "",
-    };
+    // ensure leading slash
+    const path = url.startsWith("/") ? url : `/${url}`;
+    return `${origin}${path}`;
+  };
+
+  // Open PDF modal for a plan
+  const openPdf = (plan: PlanUI) => {
+    const resolved = resolveUrl(plan.pdfUrl ?? null);
+    setPdfTitle(plan.title ?? "Plan PDF");
+    setPdfToView(resolved);
+    setPdfModalOpen(true);
+  };
+
+  // FormData upload handler
+  const handleCreatePlan = async () => {
+    if (!newPlan.title.trim()) return alert("Please add a plan title");
+    if (!newPlan.duration.trim()) return alert("Please add duration");
+
+    const formData = new FormData();
+    formData.append("title", newPlan.title.trim());
+    formData.append("plan_type", backendTypeFromUI(newPlan.type));
+    formData.append("difficulty", backendDifficultyFromUI(newPlan.difficulty));
+    formData.append("duration", newPlan.duration.trim());
+
+    const goalsArray = newPlan.goals
+      .split(",")
+      .map((g) => g.trim())
+      .filter(Boolean);
+    formData.append("goals", JSON.stringify(goalsArray));
+    formData.append("Description", newPlan.description?.trim() || "");
+
+    if (imageFile) {
+      formData.append("image", imageFile, imageFile.name); // field name 'image' matches multer upload.single('image')
+    }
 
     try {
       setLoading(true);
-      await planService.createPlan(payload);
+      await planService.createPlan(formData);
       setIsCreatePlanOpen(false);
       setNewPlan({
         title: "",
@@ -192,10 +234,12 @@ export function WorkoutPlans() {
         difficulty: "beginner",
         goals: "",
       });
+      setImageFile(null);
       await fetchPlans();
     } catch (err: any) {
       console.error("Failed to create plan", err);
-      alert(err?.message || "Failed to create plan");
+      const message = err?.message || err?.response?.data?.message || "Failed to create plan";
+      alert(message);
     } finally {
       setLoading(false);
     }
@@ -214,11 +258,10 @@ export function WorkoutPlans() {
     }
   };
 
-  const getTypeBadge = (type: string) => {
-    return type === "workout"
+  const getTypeBadge = (type: string) =>
+    type === "workout"
       ? <Badge className="bg-neon-blue/10 text-neon-blue border-neon-blue/20">Workout</Badge>
       : <Badge className="bg-purple-500/10 text-purple-500 border-purple-500/20">Diet</Badge>;
-  };
 
   const planCounts = {
     all: plans.length,
@@ -244,10 +287,9 @@ export function WorkoutPlans() {
           <DialogContent className="sm:max-w-[525px]">
             <DialogHeader>
               <DialogTitle>Create New Plan</DialogTitle>
-              <DialogDescription>
-                Create a personalized workout or diet plan for your members.
-              </DialogDescription>
+              <p className="text-sm text-muted-foreground">Create a personalized workout or diet plan for your members.</p>
             </DialogHeader>
+
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
                 <Label htmlFor="title">Plan Title</Label>
@@ -258,6 +300,7 @@ export function WorkoutPlans() {
                   placeholder="Enter plan title"
                 />
               </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="type">Plan Type</Label>
@@ -271,6 +314,7 @@ export function WorkoutPlans() {
                     </SelectContent>
                   </Select>
                 </div>
+
                 <div className="grid gap-2">
                   <Label htmlFor="difficulty">Difficulty</Label>
                   <Select value={newPlan.difficulty} onValueChange={(value: "beginner" | "intermediate" | "advanced") => setNewPlan({ ...newPlan, difficulty: value })}>
@@ -285,6 +329,7 @@ export function WorkoutPlans() {
                   </Select>
                 </div>
               </div>
+
               <div className="grid gap-2">
                 <Label htmlFor="duration">Duration</Label>
                 <Input
@@ -294,26 +339,39 @@ export function WorkoutPlans() {
                   placeholder="e.g., 8 weeks, 3 months"
                 />
               </div>
+
               <div className="grid gap-2">
                 <Label htmlFor="goals">Goals (comma separated)</Label>
                 <Input
                   id="goals"
                   value={newPlan.goals}
                   onChange={(e) => setNewPlan({ ...newPlan, goals: e.target.value })}
-                  placeholder="e.g., Build muscle, Lose weight, Improve endurance"
+                  placeholder="e.g., Build muscle, Lose weight"
                 />
               </div>
+
               <div className="grid gap-2">
                 <Label htmlFor="description">Description</Label>
                 <Textarea
                   id="description"
                   value={newPlan.description}
                   onChange={(e) => setNewPlan({ ...newPlan, description: e.target.value })}
-                  placeholder="Detailed description of the plan..."
+                  placeholder="Detailed description..."
                   rows={4}
                 />
               </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="image">Plan Image (optional)</Label>
+                <Input
+                  id="image"
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setImageFile(e.target.files?.[0] || null)}
+                />
+              </div>
             </div>
+
             <DialogFooter>
               <Button
                 type="button"
@@ -324,11 +382,12 @@ export function WorkoutPlans() {
                 Create Plan
               </Button>
             </DialogFooter>
+
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* Plan Type Tabs */}
+      {/* Tabs + Cards (unchanged) */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-3 lg:w-fit">
           <TabsTrigger value="all">All Plans ({planCounts.all})</TabsTrigger>
@@ -337,7 +396,6 @@ export function WorkoutPlans() {
         </TabsList>
 
         <TabsContent value={activeTab} className="space-y-6">
-          {/* Plans Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {loading ? (
               <div className="col-span-full text-center py-8">Loading plans...</div>
@@ -414,6 +472,24 @@ export function WorkoutPlans() {
                         )}
                       </div>
                     </div>
+
+                    {/* PDF controls */}
+                    {plan.pdfUrl && (
+                      <div className="flex items-center gap-2 pt-2">
+                       
+
+                        <a
+                          href={resolveUrl(plan.pdfUrl) || "#"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center"
+                          // Note: download may only work for same-origin files
+                          download
+                        >
+                          <Button variant="ghost">Download PDF</Button>
+                        </a>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               ))
@@ -422,7 +498,6 @@ export function WorkoutPlans() {
         </TabsContent>
       </Tabs>
 
-      {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="border-border/50">
           <CardHeader className="pb-2">
@@ -461,7 +536,6 @@ export function WorkoutPlans() {
         </Card>
       </div>
 
-      {/* Template Library */}
       <Card className="border-border/50">
         <CardHeader>
           <CardTitle>Plan Templates</CardTitle>
@@ -492,6 +566,54 @@ export function WorkoutPlans() {
           </div>
         </CardContent>
       </Card>
+
+      {/* PDF Viewer Dialog */}
+      <Dialog open={pdfModalOpen} onOpenChange={(open) => { if (!open) { setPdfToView(null); setPdfTitle(""); } setPdfModalOpen(open); }}>
+        <DialogContent className="max-w-4xl w-full">
+          <DialogHeader>
+            <DialogTitle>{pdfTitle}</DialogTitle>
+          </DialogHeader>
+
+          <div className="mt-2">
+            {pdfToView ? (
+              // iframe viewer with fallback
+              <div style={{ height: "70vh", minHeight: 400 }}>
+                <iframe
+                  title={pdfTitle}
+                  src={pdfToView}
+                  style={{ width: "100%", height: "100%", border: "none" }}
+                />
+                {/* object fallback (some browsers) */}
+                <noscript>
+                  <object data={pdfToView} type="application/pdf" width="100%" height="100%">
+                    <p>
+                      Your browser does not support viewing PDFs inline.{" "}
+                      <a href={pdfToView} target="_blank" rel="noreferrer">Open PDF in new tab</a>
+                    </p>
+                  </object>
+                </noscript>
+              </div>
+            ) : (
+              <div>No PDF available</div>
+            )}
+          </div>
+
+          <DialogFooter className="mt-4 flex items-center justify-between">
+            <div>
+              {pdfToView && (
+                <a href={pdfToView} target="_blank" rel="noopener noreferrer" download>
+                  <Button variant="outline">Open in new tab / Download</Button>
+                </a>
+              )}
+            </div>
+            <div>
+              <Button onClick={() => setPdfModalOpen(false)}>Close</Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
+export default WorkoutPlans;

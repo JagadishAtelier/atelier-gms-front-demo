@@ -175,7 +175,7 @@ function SpeedometerGauge({
 export function Dashboard({ onNavigate }: DashboardProps) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [isUpdating, setIsUpdating] = useState(false); // background update indicator
+  const [isUpdating, setIsUpdating] = useState(false); 
   const [isDark, setIsDark] = useState<boolean>(false);
 
   // device flags
@@ -196,7 +196,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     };
   }, []);
 
-  // load-from-localStorage-first + background fetch update
+
   useEffect(() => {
     let mounted = true;
     const controller = new AbortController();
