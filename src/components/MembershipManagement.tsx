@@ -54,7 +54,30 @@ interface Member {
   dob?: string;
 }
 
+/* ---------- device hook: mobile / tablet / desktop ---------- */
+function useDevice() {
+  const isBrowser = typeof window !== 'undefined';
+  const [width, setWidth] = useState<number>(isBrowser ? window.innerWidth : 1024);
+
+  useEffect(() => {
+    if (!isBrowser) return;
+    const handler = () => setWidth(window.innerWidth);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, [isBrowser]);
+
+  const isMobile = width <= 640; // phones
+  // keep same breakpoints but consider tablets to be narrower styling wise
+  const isTablet = width > 640 && width < 1024; // tablets
+  const isDesktop = width >= 1024;
+
+  return { width, isMobile, isTablet, isDesktop };
+}
+
 export function MembershipManagement() {
+  // device sizing
+  const { isMobile, isTablet, isDesktop } = useDevice();
+
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
@@ -634,13 +657,13 @@ export function MembershipManagement() {
       setBillingActiveItems(activeList);
 
       // update billingMember fields so the UI shows them
-      setBillingMember((prev) => ({
+      setBillingMember((prev) => (({
         ...(prev || member),
         planType: currentPlanName || (prev?.planType ?? ''),
         amount: typeof amountVal !== 'undefined' ? amountVal : (prev?.amount ?? undefined),
         lastPayment: lastPaymentDate || prev?.lastPayment || undefined,
         nextBilling: nextBillingDateISO || prev?.nextBilling || undefined
-      }));
+      })));
     } catch (err: any) {
       console.error('Failed to load member memberships', err);
       toast.error(err?.message || 'Failed to load memberships for this member');
@@ -692,15 +715,16 @@ export function MembershipManagement() {
   });
 
   const getStatusBadge = (status: string) => {
+    const smallBadgeClass = isTablet ? 'px-1 py-0.5 text-[11px]' : 'px-2 py-0.5 text-sm';
     switch (status) {
       case 'active':
-        return <Badge className="bg-neon-green/10 text-neon-green border-neon-green/20">Active</Badge>;
+        return <Badge className={`bg-neon-green/10 text-neon-green border-neon-green/20 ${smallBadgeClass}`}>Active</Badge>;
       case 'expired':
-        return <Badge variant="destructive">Expired</Badge>;
+        return <Badge variant="destructive" className={smallBadgeClass}>Expired</Badge>;
       case 'pending':
-        return <Badge className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20">Pending</Badge>;
+        return <Badge className={`bg-yellow-500/10 text-yellow-500 border-yellow-500/20 ${smallBadgeClass}`}>Pending</Badge>;
       default:
-        return <Badge variant="outline">Unknown</Badge>;
+        return <Badge variant="outline" className={smallBadgeClass}>Unknown</Badge>;
     }
   };
 
@@ -711,32 +735,47 @@ export function MembershipManagement() {
     pending: members.filter(m => m.status === 'pending').length
   };
 
+  // ----- responsive classes (compact tablet tuning) -----
+  // I've tightened spacing and font sizes for tablet to get a denser, "perfect" tablet look.
+  const pagePadding = isTablet ? 'px-3' : 'px-0';
+  const headingClass = isTablet ? 'text-xl' : 'text-3xl';
+  const subtitleClass = isTablet ? 'text-sm' : 'text-muted-foreground';
+  const cardPadding = isTablet ? 'p-3' : 'p-6';
+  const smallCardPadding = isTablet ? 'p-2' : 'p-4';
+  const dialogPadding = isTablet ? 'px-3 py-2' : 'px-4 py-4';
+  const smallText = isTablet ? 'text-xs' : 'text-sm';
+  const tableRowPadding = isTablet ? 'py-1 px-2' : 'py-3 px-4';
+  const iconClass = isTablet ? 'w-3 h-3' : 'w-4 h-4';
+  const avatarSizeClass = isTablet ? 'w-6 h-6 text-xs' : 'w-8 h-8 text-sm';
+  const dialogMaxW = isTablet ? 'max-w-lg' : 'max-w-2xl';
+  const buttonCompact = isTablet ? 'px-3 py-1 text-sm' : 'px-4 py-2';
+
   return (
-    <div className="space-y-6">
+    <div className={`space-y-6 ${pagePadding}`}>
       {/* Top area */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4`}>
         <div>
-          <h1 className="text-3xl mb-2">Membership Management</h1>
-          <p className="text-muted-foreground">Manage gym members, plans, and renewals</p>
+          <h1 className={`${headingClass} mb-2 font-semibold`}>Membership Management</h1>
+          <p className={`${subtitleClass}`}>Manage gym members, plans, and renewals</p>
         </div>
 
         {/* Add member */}
         <Dialog open={isAddMemberOpen} onOpenChange={setIsAddMemberOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-gradient-to-r from-neon-green to-neon-blue text-white w-full sm:w-auto">
-              <Plus className="w-4 h-4 mr-2" />
-              <span className="hidden sm:inline">Add New Member</span>
-              <span className="sm:hidden">Add Member</span>
+            <Button className={`bg-gradient-to-r from-neon-green to-neon-blue text-white ${isTablet ? 'px-3 py-1 text-sm' : 'px-4 py-2'}`}>
+              <Plus className={`${iconClass} mr-2`} />
+              <span className="hidden sm:inline">{isTablet ? 'Add Member' : 'Add New Member'}</span>
+              <span className="sm:hidden">Add</span>
             </Button>
           </DialogTrigger>
 
-          <DialogContent className="w-[95vw] max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl max-h-[90vh] overflow-y-auto mx-4 sm:mx-0">
-            <DialogHeader className="px-1 sm:px-0">
-              <DialogTitle className="text-lg sm:text-xl">Add New Member</DialogTitle>
+          <DialogContent className={`${dialogMaxW} w-[95vw] max-h-[90vh] overflow-y-auto mx-4 sm:mx-0`}>
+            <DialogHeader className={`${dialogPadding}`}>
+              <DialogTitle className={`${isTablet ? 'text-lg' : 'text-xl'}`}>Add New Member</DialogTitle>
             </DialogHeader>
-            <div className="grid gap-3 sm:gap-4 py-3 sm:py-4 px-1 sm:px-0">
+            <div className={`grid gap-2 sm:gap-3 ${isTablet ? 'py-2 px-1' : 'py-3 px-1 sm:px-0'}`}>
               <div className="grid gap-2">
-                <Label htmlFor="photo" className="text-sm sm:text-base">Member Photo</Label>
+                <Label htmlFor="photo" className={`${smallText}`}>Member Photo</Label>
                 <Input
                   id="photo"
                   type="file"
@@ -747,35 +786,35 @@ export function MembershipManagement() {
                     if (!file) return;
                     await uploadAndSetPhoto(file);
                   }}
-                  className="cursor-pointer text-sm"
+                  className={`cursor-pointer ${isTablet ? 'text-xs' : 'text-sm'}`}
                   disabled={imageUploading}
                 />
                 {imageUploading ? <div className="text-xs text-muted-foreground">Uploading image...</div> : null}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
                 <div className="grid gap-2 sm:col-span-2">
-                  <Label>Full Name</Label>
+                  <Label className={`${smallText}`}>Full Name</Label>
                   <Input value={newMember.name} onChange={(e) => setNewMember({...newMember, name: e.target.value})} />
                 </div>
                 <div>
-                  <Label>Email</Label>
+                  <Label className={`${smallText}`}>Email</Label>
                   <Input type="email" value={newMember.email} onChange={(e) => setNewMember({...newMember, email: e.target.value})} />
                 </div>
                 <div>
-                  <Label>Phone</Label>
+                  <Label className={`${smallText}`}>Phone</Label>
                   <Input value={newMember.phone} onChange={(e) => setNewMember({...newMember, phone: e.target.value})} />
                 </div>
               </div>
 
               <div>
-                <Label>Start Date</Label>
+                <Label className={`${smallText}`}>Start Date</Label>
                 <Input type="date" value={newMember.startDate} onChange={(e) => setNewMember({...newMember, startDate: e.target.value})} />
               </div>
             </div>
 
-            <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-0 px-1 sm:px-0">
-              <Button onClick={handleAddMember} className="w-full sm:w-auto bg-gradient-to-r from-neon-green to-neon-blue text-white" disabled={loading || imageUploading}>
+            <DialogFooter className={`flex flex-col sm:flex-row gap-2 sm:gap-0 ${dialogPadding}`}>
+              <Button onClick={handleAddMember} className={`${isTablet ? 'w-full sm:w-auto px-3 py-1 text-sm' : 'w-full sm:w-auto px-4 py-2'} bg-gradient-to-r from-neon-green to-neon-blue text-white`} disabled={loading || imageUploading}>
                 {loading ? 'Saving...' : 'Add Member'}
               </Button>
             </DialogFooter>
@@ -785,79 +824,79 @@ export function MembershipManagement() {
 
       {/* Profile dialog */}
       <Dialog open={isProfileOpen} onOpenChange={setIsProfileOpen}>
-        <DialogContent className="sm:max-w-[600px] max-w-[95vw] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className={`sm:${dialogMaxW} max-w-[95vw] max-h-[90vh] overflow-y-auto`}>
+          <DialogHeader className={`${dialogPadding}`}>
             <DialogTitle className="flex items-center justify-between">
               Member Profile
-              {!isEditing && <Button variant="outline" size="sm" onClick={handleEditProfile}><Edit className="w-4 h-4 mr-2" />Edit</Button>}
+              {!isEditing && <Button variant="outline" size={isTablet ? "sm" : "sm"} onClick={handleEditProfile}><Edit className={`${iconClass} mr-2`} />Edit</Button>}
             </DialogTitle>
           </DialogHeader>
 
           {selectedMember && editedMember && (
-            <div className="grid gap-6 py-4 px-1 sm:px-2">
-              <div className="flex items-start gap-4">
-                <div className="w-20 h-20 bg-gradient-to-r from-neon-green to-neon-blue rounded-full flex items-center justify-center text-white text-xl">
+            <div className={`${isTablet ? 'grid gap-3 py-2 px-2' : 'grid gap-6 py-4 px-1 sm:px-2'}`}>
+              <div className="flex items-start gap-3">
+                <div className={`${avatarSizeClass} bg-gradient-to-r from-neon-green to-neon-blue rounded-full flex items-center justify-center text-white`}>
                   {selectedMember.name.charAt(0)}
                 </div>
-                <div className="flex-1 space-y-2">
+                <div className="flex-1 space-y-1">
                   {isEditing ? (
-                    <Input value={editedMember.name} onChange={(e) => setEditedMember({...editedMember, name: e.target.value})} className="text-lg font-semibold" />
-                  ) : <h3 className="text-lg font-semibold">{selectedMember.name}</h3>}
+                    <Input value={editedMember.name} onChange={(e) => setEditedMember({...editedMember, name: e.target.value})} className={`${isTablet ? 'text-sm font-semibold' : 'text-lg font-semibold'}`} />
+                  ) : <h3 className={`${isTablet ? 'text-sm font-semibold' : 'text-lg font-semibold'}`}>{selectedMember.name}</h3>}
                   <div className="flex items-center gap-2">
                     {getStatusBadge(selectedMember.status)}
-                    <Badge variant="outline">{selectedMember.planType}</Badge>
+                    <Badge variant="outline" className={isTablet ? 'text-xs' : ''}>{selectedMember.planType}</Badge>
                   </div>
                 </div>
               </div>
 
-              <div className="grid gap-4">
-                <h4 className="font-medium">Contact Information</h4>
-                <div className="grid sm:grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <h4 className={`${isTablet ? 'font-medium text-xs' : 'font-medium'}`}>Contact Information</h4>
+                <div className="grid sm:grid-cols-2 gap-2">
                   <div>
-                    <Label>Email</Label>
-                    {isEditing ? <Input type="email" value={editedMember.email} onChange={(e) => setEditedMember({...editedMember, email: e.target.value})} /> : <p className="text-sm text-muted-foreground">{selectedMember.email}</p>}
+                    <Label className={`${smallText}`}>Email</Label>
+                    {isEditing ? <Input type="email" value={editedMember.email} onChange={(e) => setEditedMember({...editedMember, email: e.target.value})} /> : <p className={`${smallText} text-muted-foreground`}>{selectedMember.email}</p>}
                   </div>
                   <div>
-                    <Label>Phone</Label>
-                    {isEditing ? <Input value={editedMember.phone} onChange={(e) => setEditedMember({...editedMember, phone: e.target.value})} /> : <p className="text-sm text-muted-foreground">{selectedMember.phone}</p>}
+                    <Label className={`${smallText}`}>Phone</Label>
+                    {isEditing ? <Input value={editedMember.phone} onChange={(e) => setEditedMember({...editedMember, phone: e.target.value})} /> : <p className={`${smallText} text-muted-foreground`}>{selectedMember.phone}</p>}
                   </div>
                 </div>
                 <div>
-                  <Label>Address</Label>
-                  {isEditing ? <Textarea value={editedMember.address || ''} onChange={(e) => setEditedMember({...editedMember, address: e.target.value})} rows={2} /> : <p className="text-sm text-muted-foreground">{selectedMember.address || 'Not provided'}</p>}
+                  <Label className={`${smallText}`}>Address</Label>
+                  {isEditing ? <Textarea value={editedMember.address || ''} onChange={(e) => setEditedMember({...editedMember, address: e.target.value})} rows={2} /> : <p className={`${smallText} text-muted-foreground`}>{selectedMember.address || 'Not provided'}</p>}
                 </div>
               </div>
 
-              <div className="grid gap-4">
-                <h4 className="font-medium">Membership Information</h4>
-                <div className="grid sm:grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <h4 className={`${isTablet ? 'font-medium text-xs' : 'font-medium'}`}>Membership Information</h4>
+                <div className="grid sm:grid-cols-2 gap-2">
                   <div>
-                    <Label>Amount</Label>
-                    <p className="text-sm text-neon-green font-medium">{formatCurrencyINR(selectedMember.amount)}</p>
+                    <Label className={`${smallText}`}>Amount</Label>
+                    <p className={`${smallText} text-neon-green font-medium`}>{formatCurrencyINR(selectedMember.amount)}</p>
                   </div>
                   <div>
-                    <Label>Start Date</Label>
-                    <p className="text-sm text-muted-foreground">{selectedMember.startDate ? new Date(selectedMember.startDate).toLocaleDateString() : 'N/A'}</p>
+                    <Label className={`${smallText}`}>Start Date</Label>
+                    <p className={`${smallText} text-muted-foreground`}>{selectedMember.startDate ? new Date(selectedMember.startDate).toLocaleDateString() : 'N/A'}</p>
                   </div>
                   <div>
-                    <Label>End Date</Label>
-                    <p className="text-sm text-muted-foreground">{selectedMember.endDate ? new Date(selectedMember.endDate).toLocaleDateString() : 'N/A'}</p>
+                    <Label className={`${smallText}`}>End Date</Label>
+                    <p className={`${smallText} text-muted-foreground`}>{selectedMember.endDate ? new Date(selectedMember.endDate).toLocaleDateString() : 'N/A'}</p>
                   </div>
                 </div>
               </div>
 
               <div>
-                <Label>Notes</Label>
-                {isEditing ? <Textarea value={editedMember.notes || ''} onChange={(e) => setEditedMember({...editedMember, notes: e.target.value})} rows={3} /> : <p className="text-sm text-muted-foreground">{selectedMember.notes || 'No notes available'}</p>}
+                <Label className={`${smallText}`}>Notes</Label>
+                {isEditing ? <Textarea value={editedMember.notes || ''} onChange={(e) => setEditedMember({...editedMember, notes: e.target.value})} rows={3} /> : <p className={`${smallText} text-muted-foreground`}>{selectedMember.notes || 'No notes available'}</p>}
               </div>
             </div>
           )}
 
-          <DialogFooter>
+          <DialogFooter className={`${dialogPadding}`}>
             {isEditing ? (
               <div className="flex gap-2">
-                <Button variant="outline" onClick={handleCancelEdit}><X className="w-4 h-4 mr-2" />Cancel</Button>
-                <Button onClick={handleSaveProfile} className="bg-gradient-to-r from-neon-green to-neon-blue text-white" disabled={loading}><Save className="w-4 h-4 mr-2" />Save Changes</Button>
+                <Button variant="outline" onClick={handleCancelEdit}><X className={`${iconClass} mr-2`} />Cancel</Button>
+                <Button onClick={handleSaveProfile} className="bg-gradient-to-r from-neon-green to-neon-blue text-white" disabled={loading}><Save className={`${iconClass} mr-2`} />Save Changes</Button>
               </div>
             ) : (
               <Button variant="outline" onClick={() => setIsProfileOpen(false)}>Close</Button>
@@ -868,15 +907,15 @@ export function MembershipManagement() {
 
       {/* Assign Membership Dialog */}
       <Dialog open={isAssignOpen} onOpenChange={setIsAssignOpen}>
-        <DialogContent className="sm:max-w-[600px] max-w-[95vw] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Assign Membership</DialogTitle>
-            <div className="text-sm text-muted-foreground">Assign a membership plan to {assignMember?.name}</div>
+        <DialogContent className={`max-w-[95vw] ${dialogMaxW} max-h-[90vh] overflow-y-auto`}>
+          <DialogHeader className={`${dialogPadding}`}>
+            <DialogTitle className={`${isTablet ? 'text-base' : ''}`}>Assign Membership</DialogTitle>
+            <div className={`${smallText} text-muted-foreground`}>Assign a membership plan to {assignMember?.name}</div>
           </DialogHeader>
 
-          <div className="grid gap-4 py-4 px-1 sm:px-2">
+          <div className={`grid gap-2 py-2 px-2`}>
             <div>
-              <Label>Membership Plan</Label>
+              <Label className={`${smallText}`}>Membership Plan</Label>
               <Select value={selectedMembershipId} onValueChange={setSelectedMembershipId}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder={membershipOptionsLoading ? 'Loading...' : 'Select plan'} />
@@ -892,7 +931,7 @@ export function MembershipManagement() {
             </div>
 
             {activeMembershipInfo && (
-              <div className="p-3 rounded-md bg-yellow-50 border border-yellow-200 text-sm">
+              <div className="p-2 rounded-md bg-yellow-50 border border-yellow-200 text-sm">
                 <div className="font-medium">Active membership detected</div>
                 <div>{activeMembershipInfo.membership_name} — ends {formatPretty(activeMembershipInfo.end_date)}</div>
                 <div className="text-xs text-muted-foreground mt-1">
@@ -903,20 +942,20 @@ export function MembershipManagement() {
 
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <Label>Start Date</Label>
+                <Label className={`${smallText}`}>Start Date</Label>
                 <Input type="date" value={assignStart} onChange={(e) => setAssignStart(e.target.value)} />
-                <p className="text-xs text-muted-foreground mt-1">Start is automatically set to today or next available day after current membership end.</p>
+                <p className="text-xs text-muted-foreground mt-1">Start is auto set to today or next available day after current membership end.</p>
               </div>
               <div>
-                <Label>End Date</Label>
+                <Label className={`${smallText}`}>End Date</Label>
                 <Input type="date" value={assignEnd} onChange={(e) => setAssignEnd(e.target.value)} />
-                <p className="text-xs text-muted-foreground mt-1">End date is auto-calculated from the selected plan's duration (editable).</p>
+                <p className="text-xs text-muted-foreground mt-1">End date auto-calculated from the selected plan's duration (editable).</p>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <Label>Payment Status</Label>
+                <Label className={`${smallText}`}>Payment Status</Label>
                 <Select value={assignPaymentStatus} onValueChange={(v: any) => setAssignPaymentStatus(v)}>
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -926,7 +965,7 @@ export function MembershipManagement() {
                 </Select>
               </div>
               <div>
-                <Label>Membership Status</Label>
+                <Label className={`${smallText}`}>Membership Status</Label>
                 <Select value={assignStatus} onValueChange={(v: any) => setAssignStatus(v)}>
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -939,7 +978,7 @@ export function MembershipManagement() {
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className={`${dialogPadding}`}>
             <Button variant="outline" onClick={() => setIsAssignOpen(false)}>Cancel</Button>
             <Button onClick={handleAssignSubmit} className="bg-gradient-to-r from-neon-green to-neon-blue text-white" disabled={assignLoading}>
               {assignLoading ? 'Assigning...' : 'Assign Membership'}
@@ -950,48 +989,48 @@ export function MembershipManagement() {
 
       {/* Billing Management Dialog */}
       <Dialog open={isBillingOpen} onOpenChange={setIsBillingOpen}>
-        <DialogContent className="sm:max-w-[600px] max-w-[95vw] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Billing Management</DialogTitle>
-            <div className="text-sm text-muted-foreground">Manage payment and billing information for {billingMember?.name}</div>
+        <DialogContent className={`max-w-[95vw] ${dialogMaxW} max-h-[90vh] overflow-y-auto`}>
+          <DialogHeader className={`${dialogPadding}`}>
+            <DialogTitle className={`${isTablet ? 'text-base' : ''}`}>Billing Management</DialogTitle>
+            <div className={`${smallText} text-muted-foreground`}>Manage payment and billing information for {billingMember?.name}</div>
           </DialogHeader>
 
           {billingMember && (
-            <div className="grid gap-6 py-4 px-1 sm:px-2">
-              <div className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg">
-                <div className="w-12 h-12 bg-gradient-to-r from-neon-green to-neon-blue rounded-full flex items-center justify-center text-white">
+            <div className={`grid gap-3 py-2 px-2`}>
+              <div className="flex items-center gap-3 p-2 bg-muted/50 rounded-lg">
+                <div className={`${avatarSizeClass} bg-gradient-to-r from-neon-green to-neon-blue rounded-full flex items-center justify-center text-white`}>
                   {billingMember.name.charAt(0)}
                 </div>
                 <div>
-                  <h4 className="font-medium">{billingMember.name}</h4>
+                  <h4 className={`${isTablet ? 'font-medium text-sm' : 'font-medium'}`}>{billingMember.name}</h4>
                 </div>
               </div>
 
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <h4 className="font-medium">Memberships</h4>
+                  <h4 className={`${isTablet ? 'font-medium text-sm' : 'font-medium'}`}>Memberships</h4>
                   <Button size="sm" variant="ghost" onClick={() => openAssignDialog(billingMember)}>
-                    <CreditCard className="w-4 h-4 mr-2" />Assign
+                    <CreditCard className={`${iconClass} mr-2`} />Assign
                   </Button>
                 </div>
 
                 {membershipLoading ? (
-                  <p className="text-sm text-muted-foreground">Loading memberships...</p>
+                  <p className={`${smallText} text-muted-foreground`}>Loading memberships...</p>
                 ) : memberMemberships.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No membership records found for this member.</p>
+                  <p className={`${smallText} text-muted-foreground`}>No membership records found for this member.</p>
                 ) : (
-                  <div className="space-y-2 max-h-56 overflow-auto pr-2">
+                  <div className="space-y-2 max-h-48 overflow-auto pr-2">
                     {memberMemberships.map((mm) => (
-                      <div key={mm.id} className="p-3 border rounded-lg">
+                      <div key={mm.id} className={`p-2 border rounded-lg ${isTablet ? 'text-sm' : ''}`}>
                         <div className="flex items-center justify-between">
                           <div>
-                            <div className="font-medium">{mm.membership_name || '—'}</div>
-                            <div className="text-sm text-muted-foreground">
+                            <div className={`${isTablet ? 'font-medium text-sm' : 'font-medium'}`}>{mm.membership_name || '—'}</div>
+                            <div className={`${smallText} text-muted-foreground`}>
                               {mm.start_date ? new Date(mm.start_date).toLocaleDateString() : 'N/A'} to {mm.end_date ? new Date(mm.end_date).toLocaleDateString() : 'N/A'}
                             </div>
                           </div>
                           <div className="text-right">
-                            <div className="text-sm">{mm.payment_status || mm.status || '—'}</div>
+                            <div className={`${smallText}`}>{mm.payment_status || mm.status || '—'}</div>
                           </div>
                         </div>
                       </div>
@@ -1001,44 +1040,42 @@ export function MembershipManagement() {
               </div>
 
               {/* Payment Info & Status */}
-              <div className="space-y-4">
-                <h4 className="font-medium">Payment Information</h4>
-                <div className="grid sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <h4 className={`${isTablet ? 'font-medium text-sm' : 'font-medium'}`}>Payment Information</h4>
+                <div className="grid sm:grid-cols-2 gap-2">
                   <div>
-                    <Label>Current Plan</Label>
-                    <p className="text-sm text-muted-foreground">{billingMember.planType || '—'}</p>
+                    <Label className={`${smallText}`}>Current Plan</Label>
+                    <p className={`${smallText} text-muted-foreground`}>{billingMember.planType || '—'}</p>
                   </div>
                   <div>
-                    <Label>Amount</Label>
-                    <p className="text-sm text-neon-green font-medium">{formatCurrencyINR(billingMember.amount)}</p>
+                    <Label className={`${smallText}`}>Amount</Label>
+                    <p className={`${smallText} text-neon-green font-medium`}>{formatCurrencyINR(billingMember.amount)}</p>
                   </div>
                   <div>
-                    <Label>Last Payment</Label>
-                    <p className="text-sm text-muted-foreground">{billingMember.lastPayment ? formatPretty(billingMember.lastPayment) : 'N/A'}</p>
+                    <Label className={`${smallText}`}>Last Payment</Label>
+                    <p className={`${smallText} text-muted-foreground`}>{billingMember.lastPayment ? formatPretty(billingMember.lastPayment) : 'N/A'}</p>
                   </div>
                   <div>
-                    <Label>Next Billing</Label>
-                    <p className="text-sm text-muted-foreground">{billingMember.nextBilling ? formatPretty(billingMember.nextBilling) : 'N/A'}</p>
+                    <Label className={`${smallText}`}>Next Billing</Label>
+                    <p className={`${smallText} text-muted-foreground`}>{billingMember.nextBilling ? formatPretty(billingMember.nextBilling) : 'N/A'}</p>
                   </div>
                 </div>
               </div>
 
-              {/* Payment Status determination:
-                  - If there are active memberships -> show Active and list
-                  - If no active memberships -> show Expired / Not paid */}
-              <div className="space-y-3">
-                <h4 className="font-medium">Payment Status</h4>
-                <div className="flex items-center justify-between p-3 border rounded-lg">
+              {/* Payment Status */}
+              <div className="space-y-2">
+                <h4 className={`${isTablet ? 'font-medium text-sm' : 'font-medium'}`}>Payment Status</h4>
+                <div className="flex items-center justify-between p-2 border rounded-lg">
                   <div className="flex items-center gap-2">
                     {billingHasActive ? getStatusBadge('active') : getStatusBadge('expired')}
-                    <span className="text-sm">
+                    <span className={`${smallText}`}>
                       {billingHasActive
                         ? 'Payment up to date (active membership present)'
                         : 'No active membership — expired or not paid'}
                     </span>
                   </div>
                   {billingHasActive ? (
-                    <div className="text-sm text-muted-foreground">
+                    <div className={`${smallText} text-muted-foreground`}>
                       Active memberships: {billingActiveItems.length}
                     </div>
                   ) : null}
@@ -1046,33 +1083,32 @@ export function MembershipManagement() {
               </div>
 
               {/* Quick Actions (Billing-only) */}
-              <div className="space-y-3">
-                <h4 className="font-medium">Quick Actions</h4>
+              <div className="space-y-2">
+                <h4 className={`${isTablet ? 'font-medium text-sm' : 'font-medium'}`}>Quick Actions</h4>
                 <div className="grid gap-2">
-                  <Button variant="outline" className="justify-start" onClick={() => openAssignDialog(billingMember)}>
-                    <CreditCard className="w-4 h-4 mr-2" />Assign Membership
+                  <Button variant="outline" className={`justify-start ${isTablet ? 'px-2 py-1 text-sm' : ''}`} onClick={() => openAssignDialog(billingMember)}>
+                    <CreditCard className={`${iconClass} mr-2`} />Assign Membership
                   </Button>
 
-                  {/* <--- Billing-only Send Payment Reminder ---> */}
                   <Button
                     variant="outline"
-                    className="justify-start"
+                    className={`justify-start ${isTablet ? 'px-2 py-1 text-sm' : ''}`}
                     onClick={() => billingMember?.id && handleSendMemberNextPaymentReminder(billingMember.id)}
                     disabled={Boolean(sendingMemberReminder) && sendingMemberReminder !== billingMember?.id}
                   >
-                    <Mail className="w-4 h-4 mr-2" />
+                    <Mail className={`${iconClass} mr-2`} />
                     {sendingMemberReminder === billingMember?.id ? 'Sending...' : 'Send Payment Reminder'}
                   </Button>
 
-                  <Button variant="outline" className="justify-start" onClick={() => console.log('Update billing date for:', billingMember.name)}>
-                    <Calendar className="w-4 h-4 mr-2" />Update Billing Date
+                  <Button variant="outline" className={`justify-start ${isTablet ? 'px-2 py-1 text-sm' : ''}`} onClick={() => console.log('Update billing date for:', billingMember.name)}>
+                    <Calendar className={`${iconClass} mr-2`} />Update Billing Date
                   </Button>
                 </div>
               </div>
             </div>
           )}
 
-          <DialogFooter>
+          <DialogFooter className={`${dialogPadding}`}>
             <Button variant="outline" onClick={() => setIsBillingOpen(false)}>Close</Button>
             <Button onClick={handleUpdatePayment} className="bg-gradient-to-r from-neon-green to-neon-blue text-white">Update Payment</Button>
           </DialogFooter>
@@ -1081,16 +1117,16 @@ export function MembershipManagement() {
 
       {/* Search & Filter */}
       <Card className="border-border/50">
-        <CardContent className="p-6">
-          <div className="flex flex-col sm:flex-row gap-4">
+        <CardContent className={`${cardPadding}`}>
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-              <Input placeholder="Search members by name or email..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10" />
+              <Search className={`absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground ${isTablet ? 'w-3 h-3' : 'w-4 h-4'}`} />
+              <Input placeholder="Search members by name or email..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className={`${isTablet ? 'pl-9 py-2 text-sm' : 'pl-10'}`} />
             </div>
             <div className="flex gap-2">
               <Select value={selectedFilter} onValueChange={setSelectedFilter}>
-                <SelectTrigger className="w-[180px]">
-                  <Filter className="w-4 h-4 mr-2" />
+                <SelectTrigger className={`w-[160px] ${isTablet ? 'text-sm' : ''}`}>
+                  <Filter className={`${isTablet ? 'w-3 h-3 mr-2' : 'w-4 h-4 mr-2'}`} />
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1107,16 +1143,16 @@ export function MembershipManagement() {
 
       {/* Members table */}
       <Card className="border-border/50">
-        <CardHeader>
-          <CardTitle>Members ({filteredMembers.length})</CardTitle>
-          <CardDescription>{selectedFilter === 'all' ? 'All registered members' : `Members with ${selectedFilter} status`}</CardDescription>
+        <CardHeader className={`${isTablet ? 'px-3 py-2' : ''}`}>
+          <CardTitle className={`${isTablet ? 'text-lg' : ''}`}>Members ({filteredMembers.length})</CardTitle>
+          <CardDescription className={`${isTablet ? 'text-xs' : ''}`}>{selectedFilter === 'all' ? 'All registered members' : `Members with ${selectedFilter} status`}</CardDescription>
         </CardHeader>
 
-        <CardContent>
+        <CardContent className={`${isTablet ? 'p-2' : ''}`}>
           <div className="rounded-md border border-border overflow-hidden">
             <Table>
               <TableHeader>
-                <TableRow>
+                <TableRow className={`${isTablet ? '' : ''}`}>
                   <TableHead>Member</TableHead>
                   <TableHead className="hidden sm:table-cell">Contact</TableHead>
                   <TableHead className="hidden md:table-cell">Period</TableHead>
@@ -1126,29 +1162,29 @@ export function MembershipManagement() {
               </TableHeader>
               <TableBody>
                 {filteredMembers.map((member) => (
-                  <TableRow key={member.id}>
+                  <TableRow key={member.id} className={`${isTablet ? '' : ''}`}>
                     <TableCell>
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-gradient-to-r from-neon-green to-neon-blue rounded-full flex items-center justify-center text-white text-sm">
+                      <div className={`flex items-center gap-3 ${tableRowPadding}`}>
+                        <div className={`${avatarSizeClass} bg-gradient-to-r from-neon-green to-neon-blue rounded-full flex items-center justify-center text-white`}>
                           {member.name.charAt(0)}
                         </div>
                         <div>
-                          <div className="font-medium">{member.name}</div>
-                          <div className="text-sm text-muted-foreground sm:hidden">{member.email}</div>
+                          <div className={`${isTablet ? 'font-medium text-sm' : 'font-medium'}`}>{member.name}</div>
+                          <div className={`text-sm text-muted-foreground sm:hidden ${isTablet ? 'text-xs' : ''}`}>{member.email}</div>
                         </div>
                       </div>
                     </TableCell>
 
                     <TableCell className="hidden sm:table-cell">
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-sm"><Mail className="w-3 h-3" />{member.email}</div>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground"><Phone className="w-3 h-3" />{member.phone}</div>
+                        <div className={`${smallText} flex items-center gap-2`}><Mail className={`${isTablet ? 'w-3 h-3' : 'w-3 h-3'}`} />{member.email}</div>
+                        <div className={`${smallText} flex items-center gap-2 text-muted-foreground`}><Phone className={`${isTablet ? 'w-3 h-3' : 'w-3 h-3'}`} />{member.phone}</div>
                       </div>
                     </TableCell>
 
                     <TableCell className="hidden md:table-cell">
                       <div className="space-y-1">
-                        <div className="text-sm">{member.startDate ? new Date(member.startDate).toLocaleDateString() : 'N/A'}</div>
+                        <div className={`${smallText}`}>{member.startDate ? new Date(member.startDate).toLocaleDateString() : 'N/A'}</div>
                       </div>
                     </TableCell>
 
@@ -1156,15 +1192,15 @@ export function MembershipManagement() {
 
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => handleViewProfile(member)} className="hover:bg-neon-green/10 hover:text-neon-green"><User className="w-4 h-4" /></Button>
+                        <Button variant="ghost" size="sm" onClick={() => handleViewProfile(member)} className={`hover:bg-neon-green/10 hover:text-neon-green ${isTablet ? 'px-2 py-1' : ''}`}><User className={`${iconClass}`} /></Button>
 
-                        <Button variant="ghost" size="sm" onClick={() => handleViewBilling(member)} className="hover:bg-neon-blue/10 hover:text-neon-blue"><CreditCard className="w-4 h-4" /></Button>
+                        <Button variant="ghost" size="sm" onClick={() => handleViewBilling(member)} className={`hover:bg-neon-blue/10 hover:text-neon-blue ${isTablet ? 'px-2 py-1' : ''}`}><CreditCard className={`${iconClass}`} /></Button>
 
                         {member.is_active === false || member.status === 'expired' ? (
-                          <Button variant="ghost" size="sm" onClick={() => handleRestore(member.id)} className="text-green-600 hover:bg-neon-green/10">Restore</Button>
+                          <Button variant="ghost" size="sm" onClick={() => handleRestore(member.id)} className={`text-green-600 hover:bg-neon-green/10 ${isTablet ? 'px-2 py-1 text-sm' : ''}`}>Restore</Button>
                         ) : (
-                          <Button variant="ghost" size="sm" onClick={() => handleDelete(member.id)} className="text-red-500 hover:bg-red-500/10">
-                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18" /><path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" /><path d="M10 11v6M14 11v6M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" /></svg>
+                          <Button variant="ghost" size="sm" onClick={() => handleDelete(member.id)} className={`text-red-500 hover:bg-red-500/10 ${isTablet ? 'px-2 py-1' : ''}`}>
+                            <svg className={`${isTablet ? 'w-3 h-3' : 'w-4 h-4'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18" /><path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" /><path d="M10 11v6M14 11v6M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" /></svg>
                           </Button>
                         )}
                       </div>
@@ -1178,28 +1214,28 @@ export function MembershipManagement() {
       </Card>
 
       {/* Quick stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         <Card className="border-border/50">
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Renewal This Week</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className={`${isTablet ? 'text-sm' : 'text-sm'}`}>Renewal This Week</CardTitle></CardHeader>
           <CardContent>
-            <div className="text-2xl text-neon-green">23 members</div>
-            <p className="text-xs text-muted-foreground mt-1">Estimated revenue: {formatCurrencyINR(3450)}</p>
+            <div className={`${isTablet ? 'text-lg' : 'text-2xl'} text-neon-green`}>23 members</div>
+            <p className={`${isTablet ? 'text-xs' : 'text-xs'} text-muted-foreground mt-1`}>Estimated revenue: {formatCurrencyINR(3450)}</p>
           </CardContent>
         </Card>
 
         <Card className="border-border/50">
-          <CardHeader className="pb-2"><CardTitle className="text-sm">New Members (30 days)</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className={`${isTablet ? 'text-sm' : 'text-sm'}`}>New Members (30 days)</CardTitle></CardHeader>
           <CardContent>
-            <div className="text-2xl text-neon-blue">18 members</div>
-            <p className="text-xs text-muted-foreground mt-1">+15% from last month</p>
+            <div className={`${isTablet ? 'text-lg' : 'text-2xl'} text-neon-blue`}>18 members</div>
+            <p className={`${isTablet ? 'text-xs' : 'text-xs'} text-muted-foreground mt-1`}>+15% from last month</p>
           </CardContent>
         </Card>
 
         <Card className="border-border/50">
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Retention Rate</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className={`${isTablet ? 'text-sm' : 'text-sm'}`}>Retention Rate</CardTitle></CardHeader>
           <CardContent>
-            <div className="text-2xl text-purple-400">87%</div>
-            <p className="text-xs text-muted-foreground mt-1">Above industry average</p>
+            <div className={`${isTablet ? 'text-lg' : 'text-2xl'} text-purple-400`}>87%</div>
+            <p className={`${isTablet ? 'text-xs' : 'text-xs'} text-muted-foreground mt-1`}>Above industry average</p>
           </CardContent>
         </Card>
       </div>

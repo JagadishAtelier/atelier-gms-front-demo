@@ -29,26 +29,44 @@ interface DashboardProps {
   onNavigate?: (page: NavigationItem) => void;
 }
 
-// small helper hook to detect mobile
-function useIsMobile(breakpoint = 768) {
-  const [isMobile, setIsMobile] = useState<boolean>(
-    typeof window !== "undefined" ? window.innerWidth <= breakpoint : false
-  );
+/* ---------- local storage config ---------- */
+const STORAGE_KEY = "gms_dashboard_v1"; // change if you want to invalidate all cached dashboards
+const SHOW_TOAST_ON_UPDATE = true; // set false to suppress toasts when background update arrives
+
+/* ---------- device hook: mobile / tablet / desktop ---------- */
+function useDevice() {
+  const isBrowser = typeof window !== "undefined";
+  const [width, setWidth] = useState<number>(isBrowser ? window.innerWidth : 1024);
+
   useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth <= breakpoint);
+    if (!isBrowser) return;
+    const handler = () => setWidth(window.innerWidth);
     window.addEventListener("resize", handler);
     return () => window.removeEventListener("resize", handler);
-  }, [breakpoint]);
-  return isMobile;
+  }, [isBrowser]);
+
+  const isMobile = width <= 640; // compact phone UI
+  const isTablet = width > 640 && width < 1024; // tablet: full charts but compact sizing
+  const isDesktop = width >= 1024;
+
+  return { width, isMobile, isTablet, isDesktop };
 }
 
-// icon wrapper that gives gradient circle, color override and hover micro-anim
-function IconBubble({ children, className = "", ariaLabel = "" }: any) {
+/* ---------- IconBubble ---------- */
+type IconBubbleProps = {
+  children: React.ReactNode;
+  className?: string;
+  ariaLabel?: string;
+  size?: "sm" | "md";
+};
+
+function IconBubble({ children, className = "", ariaLabel = "", size = "md" }: IconBubbleProps) {
+  const sizeClass = size === "sm" ? "h-8 w-8" : "h-9 w-9";
   return (
     <motion.div
       whileHover={{ scale: 1.06, rotate: 3 }}
       transition={{ type: "spring", stiffness: 300, damping: 18 }}
-      className={`inline-flex items-center justify-center h-9 w-9 rounded-full shadow-sm ${className}`}
+      className={`inline-flex items-center justify-center ${sizeClass} rounded-full shadow-sm ${className}`}
       aria-label={ariaLabel}
     >
       {children}
@@ -56,7 +74,7 @@ function IconBubble({ children, className = "", ariaLabel = "" }: any) {
   );
 }
 
-/* ---------- Speedometer (half / semicircle) gauge ---------- */
+/* ---------- SpeedometerGauge (unchanged) ---------- */
 function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
   const a = ((angleDeg - 90) * Math.PI) / 180.0;
   return {
@@ -157,8 +175,11 @@ function SpeedometerGauge({
 export function Dashboard({ onNavigate }: DashboardProps) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [isUpdating, setIsUpdating] = useState(false); // background update indicator
   const [isDark, setIsDark] = useState<boolean>(false);
-  const isMobile = useIsMobile();
+
+  // device flags
+  const { isMobile, isTablet, isDesktop } = useDevice();
 
   useEffect(() => {
     const detect = () =>
@@ -175,22 +196,77 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     };
   }, []);
 
+  // load-from-localStorage-first + background fetch update
   useEffect(() => {
     let mounted = true;
-    const fetchDashboard = async () => {
+    const controller = new AbortController();
+
+    const loadFromCache = () => {
       try {
-        const res = await dashboardService.getDashboard();
-        if (mounted) setData(res.data);
-      } catch (err) {
-        toast.error("Failed to load dashboard data");
-        console.error(err);
-      } finally {
-        if (mounted) setLoading(false);
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return false;
+        const parsed = JSON.parse(raw);
+        if (!parsed || !parsed.data) return false;
+        setData(parsed.data);
+        setLoading(false);
+        return true;
+      } catch (e) {
+        console.warn("Failed to read dashboard cache:", e);
+        return false;
       }
     };
-    fetchDashboard();
+
+    const fetchAndUpdate = async () => {
+      setIsUpdating(true);
+      try {
+        const res = await dashboardService.getDashboard();
+        if (!mounted) return;
+        const newData = res?.data ?? null;
+        if (!newData) return;
+
+        // compare cached and new - stringify compare is fine for this use-case
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          const prev = raw ? JSON.parse(raw).data : null;
+          const prevStr = prev ? JSON.stringify(prev) : null;
+          const newStr = JSON.stringify(newData);
+          if (!prevStr || prevStr !== newStr) {
+            setData(newData);
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify({ ts: Date.now(), data: newData }));
+            } catch (e) {
+              console.warn("Failed to write dashboard cache:", e);
+            }
+            if (SHOW_TOAST_ON_UPDATE) toast.success("Dashboard updated");
+          }
+        } catch (e) {
+          // on any compare failure, just write and update
+          setData(newData);
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({ ts: Date.now(), data: newData }));
+          } catch (ee) {
+            console.warn("Failed to write dashboard cache:", ee);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to refresh dashboard:", err);
+        // only notify if no data at all
+        if (!data) toast.error("Failed to load dashboard data");
+      } finally {
+        if (mounted) {
+          setIsUpdating(false);
+          setLoading(false);
+        }
+      }
+    };
+
+    const hadCache = loadFromCache();
+    // always fetch in background to get fresh values (even if cache present)
+    fetchAndUpdate();
+
     return () => {
       mounted = false;
+      controller.abort();
     };
   }, []);
 
@@ -252,75 +328,103 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     borderWidth: 4,
     borderStyle: "solid",
     borderColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(15,23,42,0.06)",
-    borderRadius: 20,
+    borderRadius: 16,
   } as React.CSSProperties;
 
+  // Tablet-specific size adjustments
+  const titleClass = isTablet ? "text-2xl" : "text-3xl sm:text-4xl";
+  const cardPaddingClass = isTablet ? "p-3" : "p-4";
+  const statValueClass = isTablet ? "text-xl" : "text-2xl sm:text-3xl";
+  const smallTextClass = isTablet ? "text-xs" : "text-sm";
+  const cardGap = isTablet ? "gap-3" : "gap-4";
+
+  // chart heights (smaller on tablet)
+  const barChartHeight = isTablet ? 220 : 260;
+  const lineChartHeight = isTablet ? 300 : 340;
+
+  // icon sizes
+  const iconSizeClass = isTablet ? "h-4 w-4" : "h-5 w-5";
+  const iconBubbleSize = isTablet ? "sm" : "md";
+
   return (
-    <div className="space-y-6 px-2 md:px-0">
-      <div>
-        <h1
-          className={`text-3xl sm:text-4xl font-extrabold bg-clip-text text-transparent ${
-            isDark ? "bg-gradient-to-r from-sky-400 to-emerald-300" : "bg-gradient-to-r from-blue-500 to-green-400"
-          }`}
-        >
-          Gym Dashboard
-        </h1>
-        <p className="text-muted-foreground mt-1">Welcome back! Here’s your performance overview.</p>
+    <div className={`space-y-6 px-2 md:px-0`}>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1
+            className={`${titleClass} font-extrabold bg-clip-text text-transparent ${
+              isDark ? "bg-gradient-to-r from-sky-400 to-emerald-300" : "bg-gradient-to-r from-blue-500 to-green-400"
+            }`}
+          >
+            Gym Dashboard
+          </h1>
+          <p className={`text-muted-foreground mt-1 ${isTablet ? "text-sm" : ""}`}>Welcome back! Here’s your performance overview.</p>
+        </div>
+
+        {/* small update indicator */}
+        <div className="text-xs text-muted-foreground flex items-center gap-2">
+          {isUpdating ? (
+            <div className="inline-flex items-center gap-2">
+              <div className="h-3 w-3 rounded-full animate-pulse bg-emerald-500" />
+              <span>Updating…</span>
+            </div>
+          ) : (
+            <div className="text-[12px]">Last: {new Date(localStorage.getItem(STORAGE_KEY) ? JSON.parse(localStorage.getItem(STORAGE_KEY) as string).ts : Date.now()).toLocaleString()}</div>
+          )}
+        </div>
       </div>
 
-      {/* STAT CARDS: each card uses inline style to increase border to 5px */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
+      {/* STAT CARDS */}
+      <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 ${cardGap} items-stretch`}>
         {[
           {
             title: "Active Members",
             value: data.activeMembers,
-            icon: <Users className="h-5 w-5" style={{ color: "#059669" }} />,
+            icon: <Users className={iconSizeClass} style={{ color: "#059669" }} />,
             aria: "Active Members",
             bubble: "bg-gradient-to-br from-green-50 to-emerald-100",
           },
           {
             title: "Upcoming Renewals",
             value: data.upcomingRenewals,
-            icon: <Calendar className="h-5 w-5" style={{ color: "#2563eb" }} />,
+            icon: <Calendar className={iconSizeClass} style={{ color: "#2563eb" }} />,
             aria: "Upcoming Renewals",
             bubble: "bg-gradient-to-br from-blue-50 to-cyan-100",
           },
           {
             title: "Pending Dues",
             value: `₹${Number(data.pendingDues ?? 0).toLocaleString()}`,
-            icon: <AlertTriangle className="h-5 w-5" style={{ color: "#d97706" }} />,
+            icon: <AlertTriangle className={iconSizeClass} style={{ color: "#d97706" }} />,
             aria: "Pending Dues",
             bubble: "bg-gradient-to-br from-yellow-50 to-orange-100",
           },
           {
             title: "Monthly Revenue",
             value: `₹${Number(data.monthlyRevenue ?? 0).toLocaleString()}`,
-            icon: <DollarSign className="h-5 w-5" style={{ color: "#059669" }} />,
+            icon: <DollarSign className={iconSizeClass} style={{ color: "#059669" }} />,
             aria: "Monthly Revenue",
             bubble: "bg-gradient-to-br from-emerald-50 to-green-100",
           },
         ].map((item, i) => (
           <motion.div key={i} whileHover={{ y: -6 }} transition={{ duration: 0.25 }} className="h-full">
-            {/* inline style used to reliably increase border to 5px and adapt color for dark/light */}
             <Card
               style={statCardBorderStyle}
-              className="h-full hover:shadow-2xl transition-all duration-300 flex flex-col bg-transparent"
+              className={`${cardPaddingClass} h-full hover:shadow-2xl transition-all duration-300 flex flex-col bg-transparent`}
             >
               <CardHeader className="flex items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <IconBubble className={item.bubble} ariaLabel={item.aria}>
+                <CardTitle className={`font-medium flex items-center gap-2 ${isTablet ? "text-sm" : "text-sm"}`}>
+                  <IconBubble className={item.bubble} ariaLabel={item.aria} size={iconBubbleSize}>
                     {item.icon}
                   </IconBubble>
-                  <span>{item.title}</span>
+                  <span className={isTablet ? "text-sm" : ""}>{item.title}</span>
                 </CardTitle>
               </CardHeader>
 
               <CardContent className="flex-grow flex items-center justify-between">
-                <div className="text-2xl sm:text-3xl font-bold">{item.value}</div>
+                <div className={`${statValueClass} font-bold`}>{item.value}</div>
 
                 <motion.div
                   whileHover={{ scale: 1.08 }}
-                  className="text-xs text-muted-foreground text-right sm:text-sm"
+                  className={`text-muted-foreground text-right ${isTablet ? "text-xs" : "text-xs sm:text-sm"}`}
                 >
                   <span className="hidden sm:inline">
                     {i === 0
@@ -341,27 +445,26 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         ))}
       </div>
 
-      {/* Remaining layout (Revenue Overview, Top Plans, Monthly New Joins) unchanged */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" >
-        <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} >
-          <Card className="border-border/50 hover:shadow-xl transition-all" style={statCardBorderStyle}>
+      {/* Revenue Overview (left) & Top Plans (right) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}>
+          <Card className={`${cardPaddingClass} border-border/50 hover:shadow-xl transition-all`} style={statCardBorderStyle}>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <IconBubble className="bg-gradient-to-br from-emerald-100 to-green-50" ariaLabel="Revenue Overview">
-                  <TrendingUp className="h-4 w-4" style={{ color: "#059669" }} />
+              <CardTitle className={`flex items-center gap-2 ${isTablet ? "text-base" : "text-lg"}`}>
+                <IconBubble className="bg-gradient-to-br from-emerald-100 to-green-50" ariaLabel="Revenue Overview" size={iconBubbleSize}>
+                  <TrendingUp className={iconSizeClass} style={{ color: "#059669" }} />
                 </IconBubble>
                 <span>Revenue Overview</span>
               </CardTitle>
-              <CardDescription>Track monthly revenue vs pending dues</CardDescription>
+              <CardDescription className={isTablet ? "text-xs" : ""}>Track monthly revenue vs pending dues</CardDescription>
             </CardHeader>
             <CardContent>
-              {/* MOBILE: half speedometer gauge */}
               {isMobile ? (
                 <div className="py-2 flex justify-center">
                   <SpeedometerGauge
                     value={latestRevenue}
                     max={latestRevenue + latestPending || 1}
-                    size={250}
+                    size={isTablet ? 220 : 250}
                     arcColor={colors.revenueBar}
                     trackColor={isDark ? "#0f1724" : "#e6eef8"}
                     needleColor={isDark ? "#e6eef8" : "#0f1724"}
@@ -369,15 +472,15 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   />
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height={260}>
+                <ResponsiveContainer width="100%" height={barChartHeight}>
                   <BarChart data={revenueTrend} margin={{ top: 10, right: 24, left: 12, bottom: 6 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={isDark ? colors.gridDark : colors.gridLight} vertical={false} />
-                    <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} />
+                    <XAxis dataKey="month" tick={{ fontSize: isTablet ? 11 : 12 }} />
+                    <YAxis tick={{ fontSize: isTablet ? 11 : 12 }} />
                     <Tooltip wrapperStyle={{ outline: "none" }} contentStyle={sharedTooltipStyle as any} />
                     <Legend verticalAlign="top" height={36} wrapperStyle={{ color: isDark ? colors.textDark : colors.textLight }} />
-                    <Bar dataKey="revenue" fill={colors.revenueBar} name="Revenue" radius={[8, 8, 8, 8]} barSize={22} />
-                    <Bar dataKey="pending" fill={colors.pendingBar} name="Pending" radius={[8, 8, 8, 8]} barSize={22} />
+                    <Bar dataKey="revenue" fill={colors.revenueBar} name="Revenue" radius={[8, 8, 8, 8]} barSize={isTablet ? 18 : 22} />
+                    <Bar dataKey="pending" fill={colors.pendingBar} name="Pending" radius={[8, 8, 8, 8]} barSize={isTablet ? 18 : 22} />
                   </BarChart>
                 </ResponsiveContainer>
               )}
@@ -386,24 +489,27 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         </motion.div>
 
         <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }}>
-          <Card className="border-border/50 hover:shadow-xl transition-all" style={statCardBorderStyle}>
+          <Card className={`${cardPaddingClass} border-border/50 hover:shadow-xl transition-all`} style={statCardBorderStyle}>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <IconBubble className="bg-gradient-to-br from-indigo-100 to-purple-50" ariaLabel="Top Plans">
-                  <Clipboard className="h-4 w-4" style={{ color: "#4f46e5" }} />
+              <CardTitle className={`flex items-center gap-2 ${isTablet ? "text-base" : "text-lg"}`}>
+                <IconBubble className="bg-gradient-to-br from-indigo-100 to-purple-50" ariaLabel="Top Plans" size={iconBubbleSize}>
+                  <Clipboard className={iconSizeClass} style={{ color: "#4f46e5" }} />
                 </IconBubble>
                 <span>Top Membership Plans</span>
               </CardTitle>
-              <CardDescription>Most subscribed membership plans</CardDescription>
+              <CardDescription className={isTablet ? "text-xs" : ""}>Most subscribed membership plans</CardDescription>
             </CardHeader>
             <CardContent>
               {data.topPlans && data.topPlans.length > 0 ? (
                 <div className="space-y-2">
                   {data.topPlans.map((plan: any, i: number) => (
-                    <div key={i} className="flex items-center justify-between rounded-lg p-2 border border-border/30 hover:bg-gradient-to-r hover:from-indigo-50 hover:to-purple-50 transition-all">
+                    <div
+                      key={i}
+                      className={`flex items-center justify-between rounded-lg ${isTablet ? "p-2" : "p-3"} border border-border/30 hover:bg-gradient-to-r hover:from-indigo-50 hover:to-purple-50 transition-all`}
+                    >
                       <div>
-                        <div className="font-medium text-sm">{plan.name}</div>
-                        <div className="text-xs text-muted-foreground">₹{plan.price}</div>
+                        <div className={`font-medium ${isTablet ? "text-sm" : "text-sm"}`}>{plan.name}</div>
+                        <div className={`text-xs text-muted-foreground`}>₹{plan.price}</div>
                       </div>
                       <Badge variant="secondary" className="bg-purple-500/10 text-purple-600">
                         {plan.subscribers} Members
@@ -412,7 +518,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">No plan data available</p>
+                <p className={`text-sm text-muted-foreground ${isTablet ? "text-xs" : ""}`}>No plan data available</p>
               )}
             </CardContent>
           </Card>
@@ -420,15 +526,15 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       </div>
 
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-        <Card className="border-border/50 hover:shadow-xl transition-all" style={statCardBorderStyle}>
+        <Card className={`${cardPaddingClass} border-border/50 hover:shadow-xl transition-all`} style={statCardBorderStyle}>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <IconBubble className="bg-gradient-to-br from-blue-100 to-cyan-50" ariaLabel="Monthly New Joins">
-                <Users className="h-4 w-4" style={{ color: "#1d4ed8" }} />
+            <CardTitle className={`flex items-center gap-2 ${isTablet ? "text-base" : "text-lg"}`}>
+              <IconBubble className="bg-gradient-to-br from-blue-100 to-cyan-50" ariaLabel="Monthly New Joins" size={iconBubbleSize}>
+                <Users className={iconSizeClass} style={{ color: "#1d4ed8" }} />
               </IconBubble>
               <span>Monthly New Joins</span>
             </CardTitle>
-            <CardDescription>Track how many members joined each month</CardDescription>
+            <CardDescription className={isTablet ? "text-xs" : ""}>Track how many members joined each month</CardDescription>
           </CardHeader>
           <CardContent>
             {isMobile ? (
@@ -436,7 +542,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                 {monthlyJoinsWithTarget.slice(-3).reverse().map((m: any, idx: number) => (
                   <div key={idx} className="flex items-center justify-between">
                     <div>
-                      <div className="text-sm font-medium">{m.month}</div>
+                      <div className={`font-medium ${isTablet ? "text-sm" : "text-sm"}`}>{m.month}</div>
                       <div className="text-xs text-muted-foreground">Target: {m.targetJoins}</div>
                     </div>
                     <div className="text-right">
@@ -455,11 +561,11 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                 <div className="text-xs text-muted-foreground">Open desktop/tablet to view the full trend line.</div>
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height={340}>
+              <ResponsiveContainer width="100%" height={lineChartHeight}>
                 <LineChart data={monthlyJoinsWithTarget} margin={{ top: 10, right: 24, left: 12, bottom: 6 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={isDark ? colors.gridDark : colors.gridLight} />
-                  <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 12 }} />
+                  <XAxis dataKey="month" tick={{ fontSize: isTablet ? 11 : 12 }} />
+                  <YAxis tick={{ fontSize: isTablet ? 11 : 12 }} />
                   <Tooltip wrapperStyle={{ outline: "none" }} contentStyle={sharedTooltipStyle as any} />
                   <Legend verticalAlign="top" height={36} wrapperStyle={{ color: isDark ? colors.textDark : colors.textLight }} />
 
@@ -468,7 +574,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                     dataKey="joins"
                     stroke={colors.linePrimary}
                     strokeWidth={3}
-                    dot={{ r: 5 }}
+                    dot={{ r: isTablet ? 4 : 5 }}
                     name="New Joins"
                   />
 
@@ -490,3 +596,5 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     </div>
   );
 }
+
+export default Dashboard;

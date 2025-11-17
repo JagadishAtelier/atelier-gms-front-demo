@@ -2,13 +2,13 @@ import React, { useEffect, useMemo, useState } from "react";
 import { NavigationItem, Theme } from '../App';
 import { Button } from './ui/button';
 import { Sheet, SheetContent, SheetTrigger } from './ui/sheet';
-import { 
-  LayoutDashboard, 
-  Users, 
-  FileText, 
-  Clipboard, 
-  BarChart3, 
-  MessageSquare, 
+import {
+  LayoutDashboard,
+  Users,
+  FileText,
+  Clipboard,
+  BarChart3,
+  MessageSquare,
   Menu,
   LogOut,
   Dumbbell,
@@ -33,13 +33,11 @@ const navigationItems = [
   { id: 'invoices' as NavigationItem, label: 'Invoices', icon: FileText },
   { id: 'plans' as NavigationItem, label: 'Plans', icon: Clipboard },
   { id: 'membership' as NavigationItem, label: 'Membership', icon: Rocket },
-  // { id: 'reports' as NavigationItem, label: 'Reports', icon: BarChart3 },
   { id: 'communication' as NavigationItem, label: 'Messages', icon: MessageSquare },
   { id: 'settings' as NavigationItem, label: 'Settings', icon: Settings },
 ];
 
 export function Layout({ children, currentPage, onNavigate, onLogout, theme, onThemeToggle }: LayoutProps) {
-  // new state to collapse/expand desktop sidebar
   const [collapsed, setCollapsed] = useState<boolean>(false);
 
   const Sidebar = ({ mobile = false, collapsed: sideCollapsed = false }: { mobile?: boolean; collapsed?: boolean }) => (
@@ -50,7 +48,7 @@ export function Layout({ children, currentPage, onNavigate, onLogout, theme, onT
         <div className={`p-2 rounded-lg ${sideCollapsed ? 'mx-auto' : ''} bg-gradient-to-r from-neon-green to-neon-blue`}>
           <Dumbbell className="w-6 h-6 text-white" />
         </div>
-        {/* hide brand text when collapsed on desktop */}
+
         {!sideCollapsed && (
           <div>
             <h2 className="font-semibold text-muted-foreground">Atelier Fitness</h2>
@@ -76,17 +74,16 @@ export function Layout({ children, currentPage, onNavigate, onLogout, theme, onT
               variant={isActive ? "secondary" : "ghost"}
               className={`${baseClasses} text-sidebar-foreground ${activeExtra}`}
               onClick={() => onNavigate(item.id)}
-              title={item.label} /* native tooltip when collapsed */
+              title={item.label}
             >
               <Icon className={`w-5 h-5 ${isActive ? 'text-neon-green' : 'text-sidebar-foreground'}`} />
-              {/* label hidden when collapsed */}
               {!sideCollapsed && <span>{item.label}</span>}
             </Button>
           );
         })}
       </nav>
 
-      {/* Footer (theme + logout) */}
+      {/* Footer */}
       <div className="p-4 border-t border-border space-y-2">
         <Button
           variant="ghost"
@@ -113,22 +110,29 @@ export function Layout({ children, currentPage, onNavigate, onLogout, theme, onT
 
   return (
     <div className="h-screen flex">
-      {/* Desktop Sidebar - width toggles between w-64 and w-20 */}
-      <div className={`${collapsed ? 'w-20' : 'w-64'} hidden md:block transition-all duration-200`}>
+
+      {/* Tablet Sidebar (fixed w-20) */}
+      <div className={`${collapsed ? 'w-13' : 'w-21'} hidden md:block lg:hidden transition-all duration-200`}>
+        <Sidebar collapsed={collapsed} />
+      </div>
+
+      {/* Desktop Sidebar (collapsible w-64 / w-20) */}
+      <div className={`${collapsed ? 'w-20' : 'w-64'} hidden lg:block transition-all duration-200`}>
         <Sidebar collapsed={collapsed} />
       </div>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
+
         {/* Mobile Header */}
         <div className="md:hidden flex items-center justify-between p-4 bg-card border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-gradient-to-r from-neon-green to-neon-blue rounded-lg">
+            <div className="p-1 bg-gradient-to-r from-neon-green to-neon-blue rounded-lg">
               <Dumbbell className="w-5 h-5 text-white" />
             </div>
-            <h2 className="font-semibold text-foreground">FitnessPro</h2>
+            <h2 className="!text-[10px] font-semibold text-foreground ">FitnessPro</h2>
           </div>
-          
+
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" onClick={onThemeToggle} className="text-foreground hover:text-foreground">
               {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
@@ -146,28 +150,31 @@ export function Layout({ children, currentPage, onNavigate, onLogout, theme, onT
           </div>
         </div>
 
-        {/* Desktop Header with Theme Toggle + Sidebar Toggle */}
-        <div className="hidden md:flex items-center justify-end p-4 bg-card/50 border-b border-border backdrop-blur-sm gap-2">
-          {/* Sidebar collapse toggle */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setCollapsed((s) => !s)}
-            className="h-8 w-8 p-0 text-foreground hover:bg-accent"
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            <Menu className="w-4 h-4" />
-          </Button>
+        {/* Desktop Header */}
+        <div className="hidden md:flex items-center justify-between p-4 bg-card/50 border-b border-border backdrop-blur-sm">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCollapsed((s) => !s)}
+              className="h-8 w-8 p-0 text-foreground hover:bg-accent"
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              <Menu className="w-4 h-4" />
+            </Button>
+          </div>
 
-          <Button 
-            variant="ghost" 
-            size="sm"
-            onClick={onThemeToggle} 
-            className="h-8 w-8 p-0 text-foreground hover:bg-accent"
-            title="Toggle theme"
-          >
-            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onThemeToggle}
+              className="h-8 w-8 p-0 text-foreground hover:bg-accent"
+              title="Toggle theme"
+            >
+              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </Button>
+          </div>
         </div>
 
         {/* Page Content */}
@@ -175,13 +182,13 @@ export function Layout({ children, currentPage, onNavigate, onLogout, theme, onT
           {children}
         </main>
 
-        {/* Mobile Bottom Navigation */}
+        {/* Mobile Bottom Nav */}
         <div className="md:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-border p-2 z-50">
           <div className="flex justify-around">
             {navigationItems.slice(0, 5).map((item) => {
               const Icon = item.icon;
               const isActive = currentPage === item.id;
-              
+
               return (
                 <Button
                   key={item.id}
