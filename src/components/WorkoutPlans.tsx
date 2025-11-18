@@ -42,7 +42,10 @@ import {
   User,
   Target,
 } from "lucide-react";
-import planService from "../service/planService"; // adjust path if needed
+import { toast } from "sonner";
+import planService from "../service/planService";
+import assignplanService from "../service/assignplanService";
+import memberService from "../service/memberService";
 import BASE_API from "../api/baseurl.js";
 
 interface PlanUI {
@@ -52,10 +55,29 @@ interface PlanUI {
   description: string;
   duration: string;
   difficulty: "beginner" | "intermediate" | "advanced";
-  assignedTo: string[];
+  assignedTo: string[]; // display names
   createdDate: string;
   goals: string[];
   pdfUrl?: string | null;
+}
+
+interface MemberItem {
+  id: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  raw?: any;
+}
+
+interface AssignmentItem {
+  id?: string;
+  member_id?: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  assigned_date?: string;
+  notes?: string;
+  raw?: any;
 }
 
 export function WorkoutPlans() {
@@ -64,6 +86,24 @@ export function WorkoutPlans() {
   const [plans, setPlans] = useState<PlanUI[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // file state
+  const [imageFile, setImageFile] = useState<File | null>(null);
+
+  // PDF modal state
+  const [pdfModalOpen, setPdfModalOpen] = useState(false);
+  const [pdfToView, setPdfToView] = useState<string | null>(null);
+  const [pdfTitle, setPdfTitle] = useState<string>("");
+
+  // Assignment modal state (existing)
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [selectedPlanForAssign, setSelectedPlanForAssign] = useState<PlanUI | null>(null);
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [assignError, setAssignError] = useState<string | null>(null);
+
+  // Members (for dropdown)
+  const [members, setMembers] = useState<MemberItem[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
 
   const [newPlan, setNewPlan] = useState({
     title: "",
@@ -74,13 +114,11 @@ export function WorkoutPlans() {
     goals: "",
   });
 
-  // file state
-  const [imageFile, setImageFile] = useState<File | null>(null);
-
-  // PDF modal state
-  const [pdfModalOpen, setPdfModalOpen] = useState(false);
-  const [pdfToView, setPdfToView] = useState<string | null>(null);
-  const [pdfTitle, setPdfTitle] = useState<string>("");
+  // New: Assigned Members modal state (viewing assigned members for a plan)
+  const [assignedMembersModalOpen, setAssignedMembersModalOpen] = useState(false);
+  const [assignedMembersLoading, setAssignedMembersLoading] = useState(false);
+  const [assignedMembers, setAssignedMembers] = useState<AssignmentItem[]>([]);
+  const [selectedPlanForMembers, setSelectedPlanForMembers] = useState<PlanUI | null>(null);
 
   const backendTypeFromUI = (t: "workout" | "diet") =>
     t === "workout" ? "Workout Plan" : "Diet Plan";
@@ -105,6 +143,28 @@ export function WorkoutPlans() {
     return [];
   };
 
+  const extractAssignmentsArray = (res: any): any[] => {
+    if (!res) return [];
+    if (Array.isArray(res)) return res;
+    if (Array.isArray(res.data)) return res.data;
+    if (res.data && Array.isArray(res.data.data)) return res.data.data;
+    if (res.data && Array.isArray(res.data.rows)) return res.data.rows;
+    if (res.rows && Array.isArray(res.rows)) return res.rows;
+    if (res.data?.data && Array.isArray(res.data.data)) return res.data.data;
+    return [];
+  };
+
+  const extractMembersArray = (res: any): any[] => {
+    if (!res) return [];
+    if (Array.isArray(res)) return res;
+    if (Array.isArray(res.data)) return res.data;
+    if (res.data && Array.isArray(res.data.data)) return res.data.data;
+    if (res.data && Array.isArray(res.data.rows)) return res.data.rows;
+    if (res.rows && Array.isArray(res.rows)) return res.rows;
+    if (res.data?.data && Array.isArray(res.data.data)) return res.data.data;
+    return [];
+  };
+
   const safeParseGoals = (rawGoals: any): string[] => {
     if (!rawGoals) return [];
     if (Array.isArray(rawGoals)) return rawGoals;
@@ -113,15 +173,30 @@ export function WorkoutPlans() {
         const parsed = JSON.parse(rawGoals);
         if (Array.isArray(parsed)) return parsed.map((g) => String(g).trim());
       } catch (e) {
-        return rawGoals.split(",").map((g: string) => g.trim()).filter(Boolean);
+        return rawGoals
+          .split(",")
+          .map((g: string) => g.trim())
+          .filter(Boolean);
       }
     }
     return [];
   };
 
-  const normalizePlan = (raw: any): PlanUI => {
-    // accept multiple names for PDF field
+  const getMemberDisplayNameFromAssignment = (assignment: any) => {
+    return (
+      assignment.member?.name ||
+      assignment.member?.full_name ||
+      assignment.member_name ||
+      assignment.memberName ||
+      assignment.member_id ||
+      assignment.memberId ||
+      assignment.member
+    );
+  };
+
+  const normalizePlan = (raw: any, assignmentMap: Record<string, string[]>) => {
     const pdfUrl = raw.pdf_url || raw.pdfUrl || raw.pdf || raw.file || null;
+    const assignedTo = assignmentMap?.[raw.id] ?? [];
 
     return {
       id: raw.id,
@@ -130,11 +205,11 @@ export function WorkoutPlans() {
       description: raw.Description || raw.description || "",
       duration: raw.duration || "",
       difficulty: uiDifficultyFromBackend(raw.difficulty),
-      assignedTo: Array.isArray(raw.assignedTo) ? raw.assignedTo : [],
+      assignedTo,
       createdDate: raw.createdAt || raw.created_date || raw.created_date_time || "",
       goals: safeParseGoals(raw.goals),
       pdfUrl,
-    };
+    } as PlanUI;
   };
 
   const fetchPlans = async () => {
@@ -148,11 +223,33 @@ export function WorkoutPlans() {
       const res = await planService.getPlans(options);
       const dataArray = extractPlansArray(res);
 
-      const normalized: PlanUI[] = dataArray.map(normalizePlan);
+      // Fetch assignments for all plans (so we can show assigned members)
+      let assignmentsArray: any[] = [];
+      try {
+        const assignRes = await assignplanService.getAssignedPlans({});
+        assignmentsArray = extractAssignmentsArray(assignRes);
+      } catch (e) {
+        console.warn("Failed to fetch assignments:", e);
+        assignmentsArray = [];
+      }
+
+      // Build map plan_id -> array of display names
+      const assignmentMap: Record<string, string[]> = {};
+      for (const a of assignmentsArray) {
+        const pid = a.plan_id || a.planId || a.plan?.id;
+        if (!pid) continue;
+        if (!assignmentMap[pid]) assignmentMap[pid] = [];
+        const display = getMemberDisplayNameFromAssignment(a) || String(a.member_id || a.memberId || "unknown");
+        if (!assignmentMap[pid].includes(display)) assignmentMap[pid].push(display);
+      }
+
+      const normalized: PlanUI[] = dataArray.map((raw: any) => normalizePlan(raw, assignmentMap));
       setPlans(normalized);
     } catch (err: any) {
       console.error("Failed to fetch plans", err);
-      setError(err?.message || "Failed to fetch plans");
+      const msg = err?.response?.data?.message || err?.message || "Failed to fetch plans";
+      toast.error(msg);
+      setError(msg);
       setPlans([]);
     } finally {
       setLoading(false);
@@ -161,21 +258,51 @@ export function WorkoutPlans() {
 
   useEffect(() => {
     fetchPlans();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
+
+  // Fetch members when assign modal opens
+  useEffect(() => {
+    const loadMembers = async () => {
+      setMembersLoading(true);
+      try {
+        // fetch a reasonable page of members; backend supports limit param in memberService
+        const res = await memberService.getMembers({ limit: 50 });
+        const arr = extractMembersArray(res);
+        const mapped = arr
+          .map((m: any) => ({
+            id: m.id || m._id || m.member_id || m.memberId,
+            name: m.name || m.full_name || m.fullName || m.email || m.phone || m.id || "",
+            email: m.email || m.email_address,
+            phone: m.phone || m.mobile || m.contact,
+            raw: m,
+          }))
+          .filter(Boolean)
+          // sort by name for nicer UX
+          .sort((a: MemberItem, b: MemberItem) => (String(a.name || "").localeCompare(String(b.name || ""))));
+        setMembers(mapped);
+      } catch (e) {
+        console.warn("Members fetch failed", e);
+        setMembers([]);
+      } finally {
+        setMembersLoading(false);
+      }
+    };
+
+    if (assignModalOpen) {
+      loadMembers();
+    } else {
+      // clear on close for privacy
+      setMembers([]);
+    }
+  }, [assignModalOpen]);
 
   /**
    * resolveUrl:
-   * - if url is absolute -> return as-is
-   * - if url is relative (starts with /) -> try to use BASE_API origin if available,
-   *   else fallback to window.location.origin
-   * - if url is relative without leading slash -> prefix with '/' + origin
    */
   const resolveUrl = (url?: string | null) => {
     if (!url) return null;
-    // already absolute
     if (/^https?:\/\//i.test(url)) return url;
-
-    // compute origin: prefer BASE_API origin (if BASE_API is absolute), else window.location.origin
     let origin = window.location.origin;
     try {
       if (BASE_API && /^https?:\/\//i.test(BASE_API)) {
@@ -183,11 +310,8 @@ export function WorkoutPlans() {
         origin = tmp.origin;
       }
     } catch (e) {
-      // ignore - fallback to window.location.origin
       origin = window.location.origin;
     }
-
-    // ensure leading slash
     const path = url.startsWith("/") ? url : `/${url}`;
     return `${origin}${path}`;
   };
@@ -200,10 +324,10 @@ export function WorkoutPlans() {
     setPdfModalOpen(true);
   };
 
-  // FormData upload handler
+  // Create plan handler (unchanged)
   const handleCreatePlan = async () => {
-    if (!newPlan.title.trim()) return alert("Please add a plan title");
-    if (!newPlan.duration.trim()) return alert("Please add duration");
+    if (!newPlan.title.trim()) return toast.error("Please add a plan title");
+    if (!newPlan.duration.trim()) return toast.error("Please add duration");
 
     const formData = new FormData();
     formData.append("title", newPlan.title.trim());
@@ -219,12 +343,13 @@ export function WorkoutPlans() {
     formData.append("Description", newPlan.description?.trim() || "");
 
     if (imageFile) {
-      formData.append("image", imageFile, imageFile.name); // field name 'image' matches multer upload.single('image')
+      formData.append("image", imageFile, imageFile.name);
     }
 
     try {
       setLoading(true);
-      await planService.createPlan(formData);
+      const res = await planService.createPlan(formData);
+      await fetchPlans();
       setIsCreatePlanOpen(false);
       setNewPlan({
         title: "",
@@ -235,13 +360,96 @@ export function WorkoutPlans() {
         goals: "",
       });
       setImageFile(null);
-      await fetchPlans();
+      const successMsg = res?.message || res?.data?.message || "Plan created";
+      toast.success(successMsg);
     } catch (err: any) {
       console.error("Failed to create plan", err);
-      const message = err?.message || err?.response?.data?.message || "Failed to create plan";
-      alert(message);
+      const message = err?.response?.data?.message || err?.message || "Failed to create plan";
+      toast.error(message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Open assign modal
+  const openAssignModal = (plan: PlanUI) => {
+    setSelectedPlanForAssign(plan);
+    setAssignForm((s) => ({ ...s, assigned_date: new Date().toISOString().slice(0, 16), member_id: "", member_name: "" }));
+    setAssignError(null);
+    setAssignModalOpen(true);
+  };
+
+  // Close assign modal and reset form
+  const closeAssignModal = () => {
+    setAssignModalOpen(false);
+    setSelectedPlanForAssign(null);
+    setAssignForm({ member_id: "", member_name: "", assigned_date: new Date().toISOString().slice(0, 16), notes: "" });
+    setAssignError(null);
+    setMembers([]);
+  };
+
+  // When user selects member from dropdown
+  const onSelectMember = (memberId: string | undefined) => {
+    if (!memberId) {
+      setAssignForm((s) => ({ ...s, member_id: "", member_name: "" }));
+      return;
+    }
+    const m = members.find((x) => String(x.id) === String(memberId));
+    setAssignForm((s) => ({ ...s, member_id: memberId, member_name: m?.name || "" }));
+  };
+
+  // assign form fields (for Assign dialog)
+  const [assignForm, setAssignForm] = useState({
+    member_id: "",
+    member_name: "",
+    assigned_date: new Date().toISOString().slice(0, 16),
+    notes: "",
+  });
+
+  // Handle assign submit
+  const handleAssignSubmit = async () => {
+    setAssignError(null);
+
+    if (!assignForm.member_id || assignForm.member_id.trim().length === 0) {
+      setAssignError("Please select a member from the dropdown.");
+      return;
+    }
+
+    let assignedISO = assignForm.assigned_date;
+    try {
+      if (!assignedISO.endsWith("Z")) {
+        const dt = new Date(assignedISO);
+        assignedISO = dt.toISOString();
+      }
+    } catch (e) {
+      assignedISO = new Date().toISOString();
+    }
+
+    const payload: any = {
+      plan_id: selectedPlanForAssign?.id,
+      member_id: assignForm.member_id.trim(),
+      assigned_date: assignedISO,
+      notes: assignForm.notes || undefined,
+    };
+
+    setAssignLoading(true);
+
+    try {
+      const res = await assignplanService.createAssignPlan(payload);
+      await fetchPlans();
+      closeAssignModal();
+      const successMsg =
+        res?.message ||
+        res?.data?.message ||
+        (res?.created ? "Assigned created" : res?.updated ? "Existing assignment updated" : "Assigned plan created");
+      toast.success(successMsg || "Plan assigned successfully");
+    } catch (err: any) {
+      console.error("Failed to assign plan", err);
+      const msg = err?.response?.data?.message || err?.message || "Failed to assign plan";
+      setAssignError(String(msg));
+      toast.error(msg);
+    } finally {
+      setAssignLoading(false);
     }
   };
 
@@ -267,6 +475,70 @@ export function WorkoutPlans() {
     all: plans.length,
     workout: plans.filter((p) => p.type === "workout").length,
     diet: plans.filter((p) => p.type === "diet").length,
+  };
+
+  // NEW: fetch assigned members for a single plan (for viewing in modal)
+  const fetchAssignedMembersForPlan = async (planId: string) => {
+    setAssignedMembersLoading(true);
+    setAssignedMembers([]);
+    try {
+      // try backend filter by plan_id
+      const res = await assignplanService.getAssignedPlans({ plan_id: planId });
+      const arr = extractAssignmentsArray(res);
+      const mapped: AssignmentItem[] = arr.map((a: any) => ({
+        id: a.id || a._id || a.assignment_id || a.assign_id,
+        member_id: a.member_id || a.memberId || a.member?.id,
+        name: getMemberDisplayNameFromAssignment(a) || (a.member?.name || a.member_name || a.name),
+        email: a.member?.email || a.email,
+        phone: a.member?.phone || a.phone,
+        assigned_date: a.assigned_date || a.assignedDate || a.created_at,
+        notes: a.notes || a.note,
+        raw: a,
+      }));
+      setAssignedMembers(mapped);
+    } catch (e: any) {
+      console.warn("Failed to load assigned members:", e);
+      toast.error(e?.response?.data?.message || e?.message || "Failed to load assigned members");
+      setAssignedMembers([]);
+    } finally {
+      setAssignedMembersLoading(false);
+    }
+  };
+
+  // Open assigned members modal
+  const openAssignedMembersModal = async (plan: PlanUI) => {
+    setSelectedPlanForMembers(plan);
+    setAssignedMembersModalOpen(true);
+    await fetchAssignedMembersForPlan(plan.id);
+  };
+
+  const closeAssignedMembersModal = () => {
+    setAssignedMembersModalOpen(false);
+    setSelectedPlanForMembers(null);
+    setAssignedMembers([]);
+  };
+
+  // Unassign a member (if backend supports delete)
+  const handleUnassign = async (assignmentId?: string) => {
+    if (!assignmentId) return toast.error("Cannot unassign: missing assignment id");
+    if (!confirm("Are you sure you want to unassign this member from the plan?")) return;
+    try {
+      // many backends support delete by id; adjust method name if yours differs
+      if (assignplanService.deleteAssignPlan) {
+        await assignplanService.deleteAssignPlan(assignmentId);
+      } else if (assignplanService.removeAssign) {
+        await assignplanService.removeAssign(assignmentId);
+      } else {
+        throw new Error("Unassign operation not supported by assignplanService");
+      }
+      // refresh both assigned list and plans summary
+      if (selectedPlanForMembers) await fetchAssignedMembersForPlan(selectedPlanForMembers.id);
+      await fetchPlans();
+      toast.success("Member unassigned");
+    } catch (e: any) {
+      console.error("Failed to unassign", e);
+      toast.error(e?.response?.data?.message || e?.message || "Failed to unassign member");
+    }
   };
 
   return (
@@ -387,7 +659,7 @@ export function WorkoutPlans() {
         </Dialog>
       </div>
 
-      {/* Tabs + Cards (unchanged) */}
+      {/* Tabs + Cards */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-3 lg:w-fit">
           <TabsTrigger value="all">All Plans ({planCounts.all})</TabsTrigger>
@@ -457,39 +729,35 @@ export function WorkoutPlans() {
                     <div>
                       <h4 className="text-sm font-medium mb-2 flex items-center gap-1">
                         <User className="w-4 h-4" />
-                        Assigned Members ({plan.assignedTo.length})
+                        {/* clickable header to open assigned members modal */}
+                        <button
+                          onClick={() => openAssignedMembersModal(plan)}
+                          className="text-sm font-medium underline-offset-2 hover:underline text-left cursor-pointer"
+                          aria-label={`View assigned members for ${plan.title}`}
+                        >
+                          Assigned Members ({plan.assignedTo.length})
+                        </button>
                       </h4>
-                      <div className="flex flex-wrap gap-1">
-                        {plan.assignedTo.slice(0, 2).map((member, index) => (
-                          <Badge key={index} variant="secondary" className="text-xs">
-                            {member}
-                          </Badge>
-                        ))}
-                        {plan.assignedTo.length > 2 && (
-                          <Badge variant="secondary" className="text-xs">
-                            +{plan.assignedTo.length - 2} more
-                          </Badge>
-                        )}
-                      </div>
                     </div>
 
-                    {/* PDF controls */}
-                    {plan.pdfUrl && (
-                      <div className="flex items-center gap-2 pt-2">
-                       
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-2 pt-2">
+                      <Button onClick={() => openAssignModal(plan)} variant="ghost">Assign</Button>
 
-                        <a
-                          href={resolveUrl(plan.pdfUrl) || "#"}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center"
-                          // Note: download may only work for same-origin files
-                          download
-                        >
-                          <Button variant="ghost">Download PDF</Button>
-                        </a>
-                      </div>
-                    )}
+                      {plan.pdfUrl && (
+                        <>
+                          <a
+                            href={resolveUrl(plan.pdfUrl) || "#"}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center"
+                            download
+                          >
+                            <Button variant="ghost">Download PDF</Button>
+                          </a>
+                        </>
+                      )}
+                    </div>
                   </CardContent>
                 </Card>
               ))
@@ -576,18 +844,16 @@ export function WorkoutPlans() {
 
           <div className="mt-2">
             {pdfToView ? (
-              // iframe viewer with fallback
               <div style={{ height: "70vh", minHeight: 400 }}>
                 <iframe
                   title={pdfTitle}
                   src={pdfToView}
                   style={{ width: "100%", height: "100%", border: "none" }}
                 />
-                {/* object fallback (some browsers) */}
                 <noscript>
                   <object data={pdfToView} type="application/pdf" width="100%" height="100%">
                     <p>
-                      Your browser does not support viewing PDFs inline.{" "}
+                      Your browser does not support viewing PDFs inline. {" "}
                       <a href={pdfToView} target="_blank" rel="noreferrer">Open PDF in new tab</a>
                     </p>
                   </object>
@@ -608,6 +874,117 @@ export function WorkoutPlans() {
             </div>
             <div>
               <Button onClick={() => setPdfModalOpen(false)}>Close</Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assign Plan Dialog (existing) */}
+      <Dialog open={assignModalOpen} onOpenChange={(open) => { if (!open) closeAssignModal(); }}>
+        <DialogContent className="sm:max-w-[525px]">
+          <DialogHeader>
+            <DialogTitle>Assign Plan{selectedPlanForAssign ? ` — ${selectedPlanForAssign.title}` : ""}</DialogTitle>
+            <p className="text-sm text-muted-foreground">Assign this plan to a member (select from dropdown).</p>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4">
+            {/* Member dropdown */}
+            <div className="grid gap-2">
+              <Label htmlFor="member_select">Select Member</Label>
+
+              {membersLoading ? (
+                <div className="text-sm text-muted-foreground">Loading members...</div>
+              ) : members.length === 0 ? (
+                <div className="text-sm text-muted-foreground">No members available. Please add members first.</div>
+              ) : (
+                <Select value={assignForm.member_id} onValueChange={(val: string) => onSelectMember(val)}>
+                  <SelectTrigger id="member_select">
+                    <SelectValue placeholder="Choose member..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {members.map((m) => (
+                      <SelectItem key={m.id} value={String(m.id)}>
+                        {`${m.name || m.email || m.id}${m.email ? ` — ${m.email}` : ""}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              <div className="text-xs text-muted-foreground">Selected: {assignForm.member_name || "none"}</div>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="assigned_date">Assigned date & time</Label>
+              <Input
+                id="assigned_date"
+                type="datetime-local"
+                value={assignForm.assigned_date}
+                onChange={(e) => setAssignForm({ ...assignForm, assigned_date: e.target.value })}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="notes">Notes (optional)</Label>
+              <Textarea
+                id="notes"
+                value={assignForm.notes}
+                onChange={(e) => setAssignForm({ ...assignForm, notes: e.target.value })}
+                rows={3}
+              />
+            </div>
+
+            {assignError && <div className="text-sm text-red-500">{assignError}</div>}
+          </div>
+
+          <DialogFooter>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={handleAssignSubmit}
+                disabled={assignLoading || members.length === 0}
+              >
+                {assignLoading ? "Assigning..." : "Assign Plan"}
+              </Button>
+              <Button variant="ghost" onClick={closeAssignModal}>Cancel</Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* NEW: Assigned Members Viewer Dialog */}
+      <Dialog open={assignedMembersModalOpen} onOpenChange={(open) => { if (!open) closeAssignedMembersModal(); }}>
+        <DialogContent className="sm:max-w-[525px]">
+          <DialogHeader>
+            <DialogTitle>
+              Assigned Members{selectedPlanForMembers ? ` — ${selectedPlanForMembers.title}` : ""}
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">View members assigned to this plan. You can unassign a member here.</p>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4">
+            {assignedMembersLoading ? (
+              <div className="text-sm text-muted-foreground">Loading assigned members...</div>
+            ) : assignedMembers.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No members assigned to this plan.</div>
+            ) : (
+              <div className="space-y-3">
+                {assignedMembers.map((m) => (
+                  <div key={m.id || m.member_id} className="flex items-center justify-between gap-4 p-3 border rounded">
+                    <div>
+                      <div className="font-medium">{m.name || m.member_id}</div>
+                      <div className="text-xs text-muted-foreground">{m.email || m.phone || "No contact"}</div>
+                      <div className="text-xs text-muted-foreground">Assigned: {m.assigned_date ? new Date(m.assigned_date).toLocaleString() : "-"}</div>
+                      {m.notes && <div className="text-xs mt-1">Notes: {m.notes}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <div className="flex items-center gap-2">
+              <Button onClick={closeAssignedMembersModal}>Close</Button>
             </div>
           </DialogFooter>
         </DialogContent>
