@@ -54,21 +54,18 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
               <Dumbbell className="w-8 h-8 text-white" />
             </div>
           </div>
-          <h1 className="text-2xl text-center text-foreground">
-            Gym Management System
+          <h1 className="text-2xl text-center text-foreground" style={{fontWeight: "bold"}}>
+            Atelier Fit
           </h1>
           <p className="text-muted-foreground text-center mt-2">
-            Owner Dashboard Login
+            Gym Management System
           </p>
         </div>
 
         {/* Login Form */}
         <Card className="border-border/50 shadow-2xl">
           <CardHeader className="space-y-1">
-            <CardTitle>Welcome Back</CardTitle>
-            <CardDescription>
-              Enter your credentials to access your gym dashboard
-            </CardDescription>
+            <CardTitle className="text-center" style={{ fontSize: "1.3rem", fontWeight: "bold" }}>Welcome Back!</CardTitle>
           </CardHeader>
 
           <CardContent>
