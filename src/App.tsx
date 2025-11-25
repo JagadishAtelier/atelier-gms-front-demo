@@ -3,6 +3,7 @@ import { Toaster } from "sonner";
 import { Login } from "./components/Login";
 import { Layout } from "./components/Layout";
 import { Dashboard } from "./components/Dashboard";
+import  MembershipDashboard  from "./components/MemberDashboard";
 import { MembershipManagement } from "./components/MembershipManagement";
 import { InvoiceManagement } from "./components/InvoiceManagement";
 import { WorkoutPlans } from "./components/WorkoutPlans";
@@ -10,10 +11,15 @@ import { Membership } from "./components/Membership.js";
 import { Reports } from "./components/Reports";
 import { CommunicationHistory } from "./components/CommunicationHistory";
 import { Settings } from "./components/Settings";
-import authService from "./service/authService.js"; // ✅ import your service
+import authService from "./service/authService.js";
+import MemberWorkoutPlans from "./components/MemberWorkoutPlans";
+import  MemberRenewal  from "./components/MemberRenewal";
 
 export type NavigationItem =
   | "dashboard"
+  | "member-dashboard"
+  | "member-workoutplans"
+  | "member-renewal"
   | "members"
   | "invoices"
   | "plans"
@@ -65,6 +71,12 @@ export default function App() {
     switch (currentPage) {
       case "dashboard":
         return <Dashboard onNavigate={setCurrentPage} />;
+      case "member-dashboard":
+        return <MembershipDashboard />;
+      case "member-workoutplans":
+        return <MemberWorkoutPlans />;
+      case "member-renewal":
+        return <MemberRenewal />
       case "members":
         return <MembershipManagement />;
       case "invoices":

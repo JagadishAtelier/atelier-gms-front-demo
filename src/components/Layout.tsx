@@ -32,6 +32,9 @@ interface LayoutProps {
 
 const navigationItems = [
   { id: "dashboard" as NavigationItem, label: "Dashboard", icon: LayoutDashboard },
+  { id: "member-dashboard" as NavigationItem, label: "Member Dashboard", icon: Dumbbell },
+  { id: "member-workoutplans" as NavigationItem, label: "Workout Plans", icon: BarChart3 },
+  { id: "member-renewal" as NavigationItem, label: "Renewal", icon: BarChart3 },
   { id: "members" as NavigationItem, label: "Members", icon: Users },
   { id: "invoices" as NavigationItem, label: "Invoices", icon: FileText },
   { id: "plans" as NavigationItem, label: "Plans", icon: Clipboard },
