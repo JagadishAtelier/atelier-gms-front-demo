@@ -3,7 +3,7 @@ import axios from "axios";
 import BASE_API from "../api/baseurl.js";
 import authService from "./authService.js";
 
-const API_URL = `${BASE_API}/gms/member/member`;
+const API_URL = `${BASE_API}/gms/member`;
 
 const buildHeaders = () => {
   const token = authService.getToken();
@@ -16,7 +16,7 @@ const memberService = {
    */
   async createMember(payload) {
     try {
-      const res = await axios.post(API_URL, payload, {
+      const res = await axios.post(`${API_URL}/member`, payload, {
         headers: { ...buildHeaders() },
       });
       return res.data;
@@ -31,7 +31,7 @@ const memberService = {
   async getMembers(options = {}) {
     try {
       const params = { ...options }; // axios skips undefined values automatically
-      const res = await axios.get(API_URL, {
+      const res = await axios.get(`${API_URL}/member`, {
         params,
         headers: { ...buildHeaders() },
       });
@@ -46,7 +46,7 @@ const memberService = {
    */
   async getMemberById(id) {
     try {
-      const res = await axios.get(`${API_URL}/${encodeURIComponent(id)}`, {
+      const res = await axios.get(`${API_URL}/member/${encodeURIComponent(id)}`, {
         headers: { ...buildHeaders() },
       });
       return res.data;
@@ -60,7 +60,7 @@ const memberService = {
    */
   async updateMember(id, payload) {
     try {
-      const res = await axios.put(`${API_URL}/${encodeURIComponent(id)}`, payload, {
+      const res = await axios.put(`${API_URL}/member/${encodeURIComponent(id)}`, payload, {
         headers: { ...buildHeaders() },
       });
       return res.data;
@@ -74,7 +74,7 @@ const memberService = {
    */
   async deleteMember(id) {
     try {
-      const res = await axios.delete(`${API_URL}/${encodeURIComponent(id)}`, {
+      const res = await axios.delete(`${API_URL}/member/${encodeURIComponent(id)}`, {
         headers: { ...buildHeaders() },
       });
       return res.data;
@@ -88,7 +88,20 @@ const memberService = {
    */
   async restoreMember(id) {
     try {
-      const res = await axios.patch(`${API_URL}/${encodeURIComponent(id)}/restore`, {}, {
+      const res = await axios.patch(`${API_URL}/member/${encodeURIComponent(id)}/restore`, {}, {
+        headers: { ...buildHeaders() },
+      });
+      return res.data;
+    } catch (err) {
+      throw err.response?.data || err;
+    }
+  },
+
+  async getMembersbyEmail(options = {}) {
+    try {
+      const params = { ...options }; // axios skips undefined values automatically
+      const res = await axios.get(`${API_URL}/memberbyemail`, {
+        params,
         headers: { ...buildHeaders() },
       });
       return res.data;
