@@ -57,18 +57,17 @@ export function Layout({
   const [gymName, setGymName] = useState<string>("Atelier Fit");
   const [gymLoading, setGymLoading] = useState(false);
 
+  // Role from localStorage (controls which nav items are shown)
+  const [role, setRole] = useState<string | null>(null);
+
   // Helper to extract gyms array from a variety of response shapes
   const extractGymsArray = (res: any): any[] => {
     if (!res) return [];
-    // gymService returns res.data (we often return axios res.data), but be defensive:
-    // Try common shapes: res.data (array), res.data.data (object with data array), res.data.rows, etc.
     if (Array.isArray(res)) return res;
     if (Array.isArray(res.data)) return res.data;
     if (Array.isArray(res.data?.data)) return res.data.data;
     if (Array.isArray(res.data?.rows)) return res.data.rows;
     if (Array.isArray(res.rows)) return res.rows;
-    if (Array.isArray(res?.data?.data)) return res.data.data;
-    // final fallback: if res.data && res.data.data is object with data array
     if (res?.data && res.data?.data && Array.isArray(res.data.data.data)) return res.data.data.data;
     return [];
   };
@@ -76,30 +75,107 @@ export function Layout({
   const loadGymName = async () => {
     setGymLoading(true);
     try {
-      // request a single gym (limit:1) to minimize payload
       const res = await gymService.getGyms({ limit: 1 });
       const arr = extractGymsArray(res);
       const g = arr[0];
       if (g && g.name) {
         setGymName(String(g.name));
-      } else {
-        // If backend returns nested { data: { data: [...] } } handle above; else fallback
-        // keep existing gymName fallback
       }
     } catch (err: any) {
       console.error("Failed to load gym name:", err);
-      // don't spam user, but optional toast:
+      // optional toast
       // toast.error(err?.message || "Failed to load gym name");
     } finally {
       setGymLoading(false);
     }
   };
 
+  /**
+   * parseRole
+   * Accepts raw localStorage value and returns a string role or null.
+   * Handles:
+   *  - plain string: "member"
+   *  - JSON stringified string: "\"member\""
+   *  - JSON object: '{"role":"member"}' or { role: "member" }
+   */
+  const parseRole = (raw: string | null): string | null => {
+    if (raw === null) return null;
+    // try to parse JSON (covers JSON-stringified values and objects)
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed) return null;
+      // if parsed is an object with role property
+      if (typeof parsed === "object" && parsed !== null && "role" in parsed) {
+        const r = (parsed as any).role;
+        return typeof r === "string" ? r : String(r);
+      }
+      // if parsed is a string (JSON-stringified string), return it
+      if (typeof parsed === "string") return parsed;
+      // fallback to raw
+    } catch {
+      // ignore parse error — raw is likely a plain string
+    }
+    return raw;
+  };
+
+  // Read role from localStorage on mount
+  useEffect(() => {
+    const stored = parseRole(localStorage.getItem("role"));
+    setRole(stored);
+  }, []);
+
+  // Listen to storage events so role updates if changed in another tab
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "role") {
+        setRole(parseRole(e.newValue));
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
   useEffect(() => {
     loadGymName();
-    // If you later want to refresh on route change or at intervals, add dependencies
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Decide which navigation items to show based on role
+  // member -> only show a limited subset, others -> full menu
+  const visibleItems = React.useMemo(() => {
+    const roleNorm = (role || "").toLowerCase().trim();
+    if (roleNorm === "member") {
+      const allowed = new Set(["member-dashboard", "member-workoutplans", "member-renewal"]);
+      return navigationItems.filter((it) => allowed.has(it.id));
+    }
+    if (roleNorm === "super admin") {
+      const allowed = new Set(["dashboard", "members", "invoices", "plans", "membership", "communication", "settings"]);
+      return navigationItems.filter((it) => allowed.has(it.id));
+    }
+    // Super Admin or any other role - show full menu
+    return navigationItems;
+  }, [role]);
+
+  /**
+   * If the current page is not allowed for the role, navigate to the first allowed page.
+   * This ensures members don't land on the (admin) "dashboard" by default.
+   */
+  useEffect(() => {
+    // Wait until role is known and visibleItems computed
+    if (role === null) return;
+
+    // Build allowed IDs
+    const allowedIds = visibleItems.map((it) => it.id);
+
+    // If currentPage is not in allowedIds, navigate to first allowed item (if exists)
+    if (!allowedIds.includes(currentPage)) {
+      if (allowedIds.length > 0) {
+        // navigate to first allowed item (for members this is "member-dashboard")
+        onNavigate(allowedIds[0]);
+      }
+    }
+    // only re-run when role, visibleItems or currentPage changes
+  }, [role, visibleItems, currentPage, onNavigate]);
 
   const Sidebar = ({ mobile = false, collapsed: sideCollapsed = false }: { mobile?: boolean; collapsed?: boolean }) => (
     <div className={`flex-col h-full bg-card border-r border-border ${mobile ? "" : "md:flex"} ${mobile ? "" : "flex"}`}>
@@ -121,7 +197,7 @@ export function Layout({
 
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-2">
-        {navigationItems.map((item) => {
+        {visibleItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentPage === item.id;
 
@@ -243,7 +319,7 @@ export function Layout({
         {/* Mobile Bottom Nav */}
         <div className="md:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-border p-2 z-50">
           <div className="flex justify-around">
-            {navigationItems.slice(0, 5).map((item) => {
+            {visibleItems.slice(0, 5).map((item) => {
               const Icon = item.icon;
               const isActive = currentPage === item.id;
 

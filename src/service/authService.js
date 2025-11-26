@@ -18,7 +18,14 @@ const authService = {
     const res = await axios.post(`${API_URL}/login`, { identifier, password });
     if (res.data?.token) {
       localStorage.setItem("token", res.data.token);
+      // store user object as JSON
       localStorage.setItem("user", JSON.stringify(res.data.user));
+      // store role as a plain string (no JSON.stringify)
+      if (typeof res.data.user?.role !== "undefined" && res.data.user?.role !== null) {
+        localStorage.setItem("role", String(res.data.user.role));
+      } else {
+        localStorage.removeItem("role");
+      }
     }
     return res.data;
   },
