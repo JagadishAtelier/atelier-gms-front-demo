@@ -28,6 +28,7 @@ import uploadService from '../service/uploadService.js';
 import membermembershipService from '../service/membermembershipService.js';
 import membershipService from '../service/membershipService.js';
 import remainderemailService from '../service/remainderemailService.js'; // <-- added
+import membermeasurementService from '../service/membermeasurementService.js'; // <-- NEW import
 
 interface Member {
   id: string;
@@ -52,6 +53,7 @@ interface Member {
   workout_batch?: string;
   gender?: 'Male' | 'Female';
   dob?: string;
+  age?: number; // <-- added age
 }
 
 /* ---------- device hook: mobile / tablet / desktop ---------- */
@@ -92,7 +94,11 @@ export function MembershipManagement() {
     joinDate: '',
     gender: '',
     dob: '',
-    notes: ''
+    notes: '',
+    // measurement fields
+    height: '', // in cm
+    weight: '', // in kg
+    measurementDate: '', // yyyy-mm-dd
   });
 
   // profile / billing states
@@ -152,6 +158,20 @@ export function MembershipManagement() {
     return num.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
   };
 
+  // --- Age helper: calculate years from DOB (returns integer years or undefined) ---
+  const calculateAge = (dobIsoOrDate: string | Date | undefined | null): number | undefined => {
+    if (!dobIsoOrDate) return undefined;
+    const d = typeof dobIsoOrDate === 'string' ? new Date(dobIsoOrDate) : dobIsoOrDate;
+    if (!d || isNaN(d.getTime())) return undefined;
+    const today = new Date();
+    let age = today.getFullYear() - d.getFullYear();
+    const m = today.getMonth() - d.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < d.getDate())) {
+      age--;
+    }
+    return age >= 0 ? age : undefined;
+  };
+
   // map backend member -> UI Member
   const mapBackendToMember = (item: any): Member => {
     const amount = item.membership?.price ? Number(item.membership.price) : (item.amount ? Number(item.amount) : 0);
@@ -160,6 +180,11 @@ export function MembershipManagement() {
     const isActive = typeof item.is_active !== 'undefined' ? item.is_active : (item.status === 'active');
 
     const status: Member['status'] = isActive ? 'active' : (item.status as Member['status'] || 'expired');
+
+    // determine DOB (try common fields)
+    const dobRaw = item.dob || item.DOB || item.date_of_birth || item.dateOfBirth || null;
+    const dobIso = dobRaw ? (typeof dobRaw === 'string' ? dobRaw : (dobRaw instanceof Date ? dobRaw.toISOString() : String(dobRaw))) : undefined;
+    const age = dobIso ? calculateAge(dobIso) : undefined;
 
     return {
       id: item.id,
@@ -182,7 +207,8 @@ export function MembershipManagement() {
       createdAt: item.createdAt || item.created_at || undefined,
       workout_batch: item.workout_batch || item.workoutBatch || undefined,
       gender: item.gender || undefined,
-      dob: item.dob || undefined
+      dob: dobIso,
+      age // <-- attached computed age
     };
   };
 
@@ -253,7 +279,7 @@ export function MembershipManagement() {
         email: newMember.email,
         phone: newMember.phone || undefined,
         gender: newMember.gender || undefined,
-        dob: newMember.dob ? new Date(newMember.dob).toISOString() : undefined,
+        dob: newMember.dob ? new Date(newMember.dob).toISOString() : undefined, // ensure dob is sent
         join_date: newMember.joinDate ? new Date(newMember.joinDate).toISOString() : undefined,
         start_date: newMember.startDate ? new Date(newMember.startDate).toISOString() : undefined,
         workout_batch: newMember.batch || undefined,
@@ -268,9 +294,50 @@ export function MembershipManagement() {
       const createdItem = (createdRes && (createdRes.data || createdRes)) || createdRes;
       const mapped = mapBackendToMember(createdItem);
       setMembers((prev) => [...prev, mapped]);
-      toast.success('Member added');
+
+      // --- NEW: create initial measurement if height or weight provided ---
+      const hasMeasurement = (newMember.height && newMember.height !== '') || (newMember.weight && newMember.weight !== '');
+      if (hasMeasurement) {
+        try {
+          const measurementPayload: any = {
+            member_id: createdItem.id,
+            // only include numeric values if provided
+            height: newMember.height ? Number(newMember.height) : undefined,
+            weight: newMember.weight ? Number(newMember.weight) : undefined,
+            measurement_date: newMember.measurementDate && newMember.measurementDate !== ''
+              ? new Date(newMember.measurementDate).toISOString()
+              : new Date().toISOString()
+          };
+          // remove undefined keys
+          Object.keys(measurementPayload).forEach(k => measurementPayload[k] === undefined && delete measurementPayload[k]);
+
+          await membermeasurementService.createMemberMeasurement(measurementPayload);
+          toast.success('Member added and initial measurement saved');
+        } catch (mErr: any) {
+          console.error('Failed to save initial measurement', mErr);
+          toast.warning('Member added but failed to save measurement');
+        }
+      } else {
+        toast.success('Member added');
+      }
+
       setIsAddMemberOpen(false);
-      setNewMember({ name: '', email: '', phone: '', startDate: '', amount: '', photo: '', batch: '', joinDate: '', gender: '', dob: '', notes: '' });
+      setNewMember({
+        name: '',
+        email: '',
+        phone: '',
+        startDate: '',
+        amount: '',
+        photo: '',
+        batch: '',
+        joinDate: '',
+        gender: '',
+        dob: '',
+        notes: '',
+        height: '',
+        weight: '',
+        measurementDate: '',
+      });
     } catch (err: any) {
       console.error('Add member error', err);
       toast.error(err?.message || 'Failed to add member');
@@ -317,7 +384,9 @@ export function MembershipManagement() {
       Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
 
       await memberService.updateMember(editedMember.id, payload);
-      setMembers((prev) => prev.map((m) => (m.id === editedMember.id ? { ...m, ...editedMember } : m)));
+      // recalc age after update if dob changed
+      const newAge = editedMember.dob ? calculateAge(editedMember.dob) : editedMember.age;
+      setMembers((prev) => prev.map((m) => (m.id === editedMember.id ? { ...m, ...editedMember, age: newAge } : m)));
       setSelectedMember(editedMember);
       setIsEditing(false);
       toast.success('Member updated');
@@ -805,6 +874,27 @@ export function MembershipManagement() {
                   <Label className={`${smallText}`}>Phone</Label>
                   <Input value={newMember.phone} onChange={(e) => setNewMember({...newMember, phone: e.target.value})} />
                 </div>
+
+                {/* DOB field added */}
+                <div>
+                  <Label className={`${smallText}`}>Date of Birth</Label>
+                  <Input type="date" value={newMember.dob} onChange={(e) => setNewMember({...newMember, dob: e.target.value})} />
+                </div>
+
+                {/* Measurement fields added */}
+                <div>
+                  <Label className={`${smallText}`}>Height (cm)</Label>
+                  <Input type="number" value={newMember.height} onChange={(e) => setNewMember({...newMember, height: e.target.value})} />
+                </div>
+                <div>
+                  <Label className={`${smallText}`}>Weight (kg)</Label>
+                  <Input type="number" value={newMember.weight} onChange={(e) => setNewMember({...newMember, weight: e.target.value})} />
+                </div>
+
+                <div>
+                  <Label className={`${smallText}`}>Measurement Date</Label>
+                  <Input type="date" value={newMember.measurementDate} onChange={(e) => setNewMember({...newMember, measurementDate: e.target.value})} />
+                </div>
               </div>
 
               <div>
@@ -845,6 +935,10 @@ export function MembershipManagement() {
                   <div className="flex items-center gap-2">
                     {getStatusBadge(selectedMember.status)}
                     <Badge variant="outline" className={isTablet ? 'text-xs' : ''}>{selectedMember.planType}</Badge>
+                    {/* show age if present */}
+                    {selectedMember.age !== undefined ? (
+                      <Badge className={`${isTablet ? 'text-xs' : 'text-sm'}`}>{selectedMember.age} yrs</Badge>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -859,6 +953,16 @@ export function MembershipManagement() {
                   <div>
                     <Label className={`${smallText}`}>Phone</Label>
                     {isEditing ? <Input value={editedMember.phone} onChange={(e) => setEditedMember({...editedMember, phone: e.target.value})} /> : <p className={`${smallText} text-muted-foreground`}>{selectedMember.phone}</p>}
+                  </div>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-2">
+                  <div>
+                    <Label className={`${smallText}`}>Date of Birth</Label>
+                    {isEditing ? <Input type="date" value={editedMember.dob ? new Date(editedMember.dob).toISOString().slice(0,10) : ''} onChange={(e) => setEditedMember({...editedMember, dob: e.target.value})} /> : <p className={`${smallText} text-muted-foreground`}>{selectedMember.dob ? formatPretty(selectedMember.dob) : 'Not provided'}</p>}
+                  </div>
+                  <div>
+                    <Label className={`${smallText}`}>Age</Label>
+                    <p className={`${smallText} text-muted-foreground`}>{selectedMember.age !== undefined ? `${selectedMember.age} years` : 'N/A'}</p>
                   </div>
                 </div>
                 <div>
@@ -1170,7 +1274,7 @@ export function MembershipManagement() {
                         </div>
                         <div>
                           <div className={`${isTablet ? 'font-medium text-sm' : 'font-medium'}`}>{member.name}</div>
-                          <div className={`text-sm text-muted-foreground sm:hidden ${isTablet ? 'text-xs' : ''}`}>{member.email}</div>
+                          <div className={`text-sm text-muted-foreground sm:hidden ${isTablet ? 'text-xs' : ''}`}>{member.email}{member.age !== undefined ? ` • ${member.age} yrs` : ''}</div>
                         </div>
                       </div>
                     </TableCell>
@@ -1178,7 +1282,7 @@ export function MembershipManagement() {
                     <TableCell className="hidden sm:table-cell">
                       <div className="space-y-1">
                         <div className={`${smallText} flex items-center gap-2`}><Mail className={`${isTablet ? 'w-3 h-3' : 'w-3 h-3'}`} />{member.email}</div>
-                        <div className={`${smallText} flex items-center gap-2 text-muted-foreground`}><Phone className={`${isTablet ? 'w-3 h-3' : 'w-3 h-3'}`} />{member.phone}</div>
+                        <div className={`${smallText} flex items-center gap-2 text-muted-foreground`}><Phone className={`${isTablet ? 'w-3 h-3' : 'w-3 h-3'}`} />{member.phone}{member.age !== undefined ? ` • ${member.age} yrs` : ''}</div>
                       </div>
                     </TableCell>
 

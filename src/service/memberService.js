@@ -97,11 +97,9 @@ const memberService = {
     }
   },
 
-  async getMembersbyEmail(options = {}) {
+  async getMembersbyEmail() {
     try {
-      const params = { ...options }; // axios skips undefined values automatically
       const res = await axios.get(`${API_URL}/memberbyemail`, {
-        params,
         headers: { ...buildHeaders() },
       });
       return res.data;
