@@ -149,7 +149,7 @@ export function Layout({
       return navigationItems.filter((it) => allowed.has(it.id));
     }
     if (roleNorm === "super admin") {
-      const allowed = new Set(["dashboard", "members", "invoices", "plans", "membership", "communication", "settings"]);
+      const allowed = new Set(["dashboard", "members", "invoices", "plans", "membership", "settings"]);
       return navigationItems.filter((it) => allowed.has(it.id));
     }
     // Super Admin or any other role - show full menu

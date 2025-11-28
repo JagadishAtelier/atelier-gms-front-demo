@@ -1,3 +1,4 @@
+// src/pages/dashboard/Dashboard.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { NavigationItem } from "../App";
 import {
@@ -23,6 +24,7 @@ import {
   Legend,
 } from "recharts";
 import dashboardService from "../service/dashboardService";
+import attendanceService from "../service/attendanceService"; // <-- NEW import
 import { motion } from "framer-motion";
 
 interface DashboardProps {
@@ -178,6 +180,11 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const [isUpdating, setIsUpdating] = useState(false); 
   const [isDark, setIsDark] = useState<boolean>(false);
 
+  // New attendance states
+  const [presentTodayCount, setPresentTodayCount] = useState<number>(0);
+  const [doingNowCount, setDoingNowCount] = useState<number>(0);
+  const [attendanceLoading, setAttendanceLoading] = useState<boolean>(false);
+
   // device flags
   const { isMobile, isTablet, isDesktop } = useDevice();
 
@@ -195,7 +202,6 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       if (mq && mq.removeEventListener) mq.removeEventListener("change", handler);
     };
   }, []);
-
 
   useEffect(() => {
     let mounted = true;
@@ -269,6 +275,68 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       controller.abort();
     };
   }, []);
+
+  // ---------- NEW: fetch attendance summary for today ----------
+  useEffect(() => {
+    let mounted = true;
+    const fetchAttendanceCounts = async () => {
+      setAttendanceLoading(true);
+      try {
+        const from = new Date();
+        from.setHours(0, 0, 0, 0);
+        const to = new Date();
+        to.setHours(23, 59, 59, 999);
+
+        // call attendanceService.getAttendances with date range
+        const res = await attendanceService.getAttendances({
+          from_date: from.toISOString(),
+          to_date: to.toISOString(),
+          limit: 2000,
+        });
+
+        // normalize list
+        let list: any[] = [];
+        if (!res) list = [];
+        else if (Array.isArray(res)) list = res;
+        else if (Array.isArray(res.data)) list = res.data;
+        else if (Array.isArray(res.data?.data)) list = res.data.data;
+        else if (Array.isArray(res.rows)) list = res.rows;
+        else if (Array.isArray(res.data?.rows)) list = res.data.rows;
+        else list = [];
+
+        // compute unique present members and doing-now members
+        const presentSet = new Set<string>();
+        const doingSet = new Set<string>();
+
+        list.forEach((a: any) => {
+          const memberId = String(a.member_id || a.memberId || a.member || a.member_id?.toString?.() || "");
+          const hasSignIn = Boolean(a.sign_in || a.signIn || a.signInAt || a.sign_in_at);
+          const hasSignOut = Boolean(a.sign_out || a.signOut || a.signOutAt || a.sign_out_at);
+
+          if (memberId && hasSignIn) {
+            presentSet.add(memberId);
+            if (!hasSignOut) doingSet.add(memberId);
+          }
+        });
+
+        if (mounted) {
+          setPresentTodayCount(presentSet.size);
+          setDoingNowCount(doingSet.size);
+        }
+      } catch (err) {
+        console.error("Failed to fetch attendance counts:", err);
+      } finally {
+        if (mounted) setAttendanceLoading(false);
+      }
+    };
+
+    fetchAttendanceCounts();
+
+    // no polling by default; if you want, add interval here
+    return () => {
+      mounted = false;
+    };
+  }, [/* run on mount only; if you want auto-refresh, add dependencies or interval */]);
 
   // explicit color set (no palette object usage)
   const colors = {
@@ -444,6 +512,62 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           </motion.div>
         ))}
       </div>
+
+      {/* ---------- NEW small attendance summary section ---------- */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Card className={`${cardPaddingClass} border-border/50`} style={statCardBorderStyle}>
+          <CardHeader>
+            <CardTitle className={`flex items-center gap-2 ${isTablet ? "text-base" : "text-lg"}`}>
+              <IconBubble className="bg-gradient-to-br from-green-50 to-emerald-100" ariaLabel="Present Today" size={iconBubbleSize}>
+                <Users className={iconSizeClass} style={{ color: "#059669" }} />
+              </IconBubble>
+              <span>Present Today</span>
+            </CardTitle>
+            <CardDescription className={isTablet ? "text-xs" : ""}>Members who signed in today</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between w-full">
+              <div>
+                <div className={`${isTablet ? "text-xl" : "text-2xl"} font-bold`}>
+                  {attendanceLoading ? "…" : presentTodayCount}
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">Unique members signed in today</div>
+              </div>
+              <div className="text-muted-foreground text-right">
+                <div className="text-xs">{new Date().toLocaleDateString()}</div>
+                <div className="text-xs mt-1">{attendanceLoading ? "Updating..." : "Live"}</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className={`${cardPaddingClass} border-border/50`} style={statCardBorderStyle}>
+          <CardHeader>
+            <CardTitle className={`flex items-center gap-2 ${isTablet ? "text-base" : "text-lg"}`}>
+              <IconBubble className="bg-gradient-to-br from-yellow-50 to-orange-50" ariaLabel="Doing Workout Now" size={iconBubbleSize}>
+                <Users className={iconSizeClass} style={{ color: "#d97706" }} />
+              </IconBubble>
+              <span>Doing Workout Now</span>
+            </CardTitle>
+            <CardDescription className={isTablet ? "text-xs" : ""}>Signed in but not signed out</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between w-full">
+              <div>
+                <div className={`${isTablet ? "text-xl" : "text-2xl"} font-bold`}>
+                  {attendanceLoading ? "…" : doingNowCount}
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">Members currently in session</div>
+              </div>
+              <div className="text-muted-foreground text-right">
+                <div className="text-xs">{attendanceLoading ? "Refreshing..." : "Realtime"}</div>
+                <div className="text-xs mt-1">{doingNowCount > 0 ? `${Math.round((doingNowCount / Math.max(1, presentTodayCount)) * 100)}%` : "0%"}</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+      {/* ---------- end attendance summary section ---------- */}
 
       {/* Revenue Overview (left) & Top Plans (right) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

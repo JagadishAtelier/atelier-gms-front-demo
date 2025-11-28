@@ -881,7 +881,7 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
 
       {/* ---------- Edit Profile Modal / Drawer (simple) ---------- */}
       {profileOpen && editState && (
-        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center" style={{backgroundColor:"#000", height:"470px", width:"900px", justifyContent:"center", left:"300px", top:"100px", padding:"20px"}}>
           <div className="absolute inset-0 bg-black/40" onClick={() => setProfileOpen(false)} />
           <div className="relative w-full md:w-[720px] max-h-[90vh] overflow-auto bg-white/6 backdrop-blur-sm rounded-t-lg md:rounded-lg p-4 m-4" role="dialog" aria-modal>
             <div className="flex items-center justify-between">

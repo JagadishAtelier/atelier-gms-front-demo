@@ -254,9 +254,9 @@ export function Settings({ theme, onThemeChange }: SettingsProps) {
         <TabsList className="grid w-full grid-cols-3 lg:grid-cols-6">
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="gym">Gym</TabsTrigger>
-          <TabsTrigger value="notifications">Notifications</TabsTrigger>
+          {/* <TabsTrigger value="notifications">Notifications</TabsTrigger> */}
           <TabsTrigger value="display">Display</TabsTrigger>
-          <TabsTrigger value="billing">Billing</TabsTrigger>
+          {/* <TabsTrigger value="billing">Billing</TabsTrigger> */}
           <TabsTrigger value="security">Security</TabsTrigger>
         </TabsList>
 
@@ -568,7 +568,7 @@ export function Settings({ theme, onThemeChange }: SettingsProps) {
         </TabsContent>
 
         {/* Billing (unchanged) */}
-        <TabsContent value="billing" className="space-y-6">
+        {/* <TabsContent value="billing" className="space-y-6">
           <Card className="border-border/50">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -601,7 +601,7 @@ export function Settings({ theme, onThemeChange }: SettingsProps) {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
+        </TabsContent> */}
 
         {/* Security (unchanged) */}
         <TabsContent value="security" className="space-y-6">

@@ -29,6 +29,7 @@ import membermembershipService from '../service/membermembershipService.js';
 import membershipService from '../service/membershipService.js';
 import remainderemailService from '../service/remainderemailService.js'; // <-- added
 import membermeasurementService from '../service/membermeasurementService.js'; // <-- NEW import
+import attendanceService from '../service/attendanceService.js'; // <-- NEW import
 
 interface Member {
   id: string;
@@ -139,6 +140,12 @@ export function MembershipManagement() {
   // Reminder loading state (billing-only)
   const [sendingMemberReminder, setSendingMemberReminder] = useState<string | null>(null);
 
+  // --- Attendance states ---
+  // map of memberId -> today's attendance record (if any)
+  const [todayAttendanceMap, setTodayAttendanceMap] = useState<Record<string, any>>({});
+  // processing flags for per-member attendance actions
+  const [attendanceProcessing, setAttendanceProcessing] = useState<Record<string, boolean>>({});
+
   // --- Helpers to normalize various response shapes ---
   const extractListFromResponse = (res: any): any[] => {
     if (!res) return [];
@@ -212,24 +219,57 @@ export function MembershipManagement() {
     };
   };
 
-  // --- Load members ---
-  useEffect(() => {
-    const fetchMembers = async () => {
-      setLoading(true);
-      try {
-        const response = await memberService.getMembers({ page: 1, limit: 200 });
-        const list = extractListFromResponse(response);
-        const mapped = list.map(mapBackendToMember);
-        setMembers(mapped);
-      } catch (err: any) {
-        console.error('Failed to fetch members', err);
-        toast.error(err?.message || 'Failed to load members');
-      } finally {
-        setLoading(false);
-      }
-    };
+  // --- Fetch members function (extracted so we can re-use to refresh the table) ---
+  const fetchMembers = async () => {
+    setLoading(true);
+    try {
+      const response = await memberService.getMembers({ page: 1, limit: 200 });
+      const list = extractListFromResponse(response);
+      const mapped = list.map(mapBackendToMember);
+      setMembers(mapped);
+      return mapped;
+    } catch (err: any) {
+      console.error('Failed to fetch members', err);
+      toast.error(err?.message || 'Failed to load members');
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    fetchMembers();
+  // --- Fetch todays attendances (extracted so we can refresh after sign in/out) ---
+  const fetchTodays = async () => {
+    try {
+      const from = new Date();
+      from.setHours(0, 0, 0, 0);
+      const to = new Date();
+      to.setHours(23, 59, 59, 999);
+
+      // generic fetch for today's attendances (backend should support from_date/to_date)
+      const res = await attendanceService.getAttendances({
+        from_date: from.toISOString(),
+        to_date: to.toISOString(),
+        limit: 1000
+      });
+      const list = extractListFromResponse(res);
+      const map: Record<string, any> = {};
+      list.forEach((a: any) => {
+        const memberId = a.member_id || a.memberId || a.member || a.member_id?.toString?.() || String(a.member_id || a.member || a.memberId || '');
+        if (memberId) map[String(memberId)] = a;
+      });
+      setTodayAttendanceMap(map);
+    } catch (err) {
+      // If single-member API exists, that's fine; we still silently fail here.
+      console.warn('Failed to fetch today attendances', err);
+    }
+  };
+
+  // --- Load members on mount and today's attendances ---
+  useEffect(() => {
+    (async () => {
+      await fetchMembers();
+      await fetchTodays();
+    })();
   }, []);
 
   // --- Load membership plans ---
@@ -264,6 +304,65 @@ export function MembershipManagement() {
       setImageUploading(false);
     }
   };
+
+  // --- Attendance actions (Sign In / Sign Out) ---
+  const setAttendanceProcessingFlag = (memberId: string, val: boolean) => {
+    setAttendanceProcessing(prev => ({ ...prev, [memberId]: val }));
+  };
+
+  const handleSignIn = async (member: Member) => {
+    if (!member || !member.id) return;
+    setAttendanceProcessingFlag(member.id, true);
+    try {
+      const payload = { member_id: member.id, sign_in: new Date().toISOString() };
+      // prefer signIn helper
+      const res = await attendanceService.signIn(payload);
+      // update map with returned attendance record (normalize id key)
+      const memberKey = String(member.id);
+      setTodayAttendanceMap(prev => ({ ...prev, [memberKey]: res || payload }));
+      toast.success('Signed in');
+
+      // refresh entire table (members + today's attendances)
+      await fetchMembers();
+      await fetchTodays();
+    } catch (err: any) {
+      console.error('Sign-in failed', err);
+      toast.error(err?.message || 'Failed to sign in');
+    } finally {
+      setAttendanceProcessingFlag(member.id, false);
+    }
+  };
+
+  const handleSignOut = async (member: Member) => {
+    if (!member || !member.id) return;
+    setAttendanceProcessingFlag(member.id, true);
+    try {
+      const payload = { member_id: member.id, sign_out: new Date().toISOString() };
+      // prefer signOut helper
+      const res = await attendanceService.signOut(payload);
+      // update today's attendance map: merge sign_out into existing record if any
+      const memberKey = String(member.id);
+      setTodayAttendanceMap(prev => {
+        const prevRec = prev[memberKey] || {};
+        // res might be the updated record; merge it. if res is null, fallback to adding sign_out
+        const updated = res && typeof res === 'object' ? { ...prevRec, ...res } : { ...prevRec, sign_out: payload.sign_out };
+        return { ...prev, [memberKey]: updated };
+      });
+      toast.success('Signed out');
+
+      // refresh entire table (members + today's attendances)
+      await fetchMembers();
+      await fetchTodays();
+    } catch (err: any) {
+      console.error('Sign-out failed', err);
+      toast.error(err?.message || 'Failed to sign out');
+    } finally {
+      setAttendanceProcessingFlag(member.id, false);
+    }
+  };
+
+  // Optional: allow manual create attendance if signIn/signOut endpoints aren't present
+  // but above functions use the service helpers you provided.
 
   // --- Add member ---
   const handleAddMember = async () => {
@@ -1295,10 +1394,70 @@ export function MembershipManagement() {
                     <TableCell>{getStatusBadge(member.status)}</TableCell>
 
                     <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
+                      <div className="flex justify-end gap-2 items-center">
                         <Button variant="ghost" size="sm" onClick={() => handleViewProfile(member)} className={`hover:bg-neon-green/10 hover:text-neon-green ${isTablet ? 'px-2 py-1' : ''}`}><User className={`${iconClass}`} /></Button>
 
                         <Button variant="ghost" size="sm" onClick={() => handleViewBilling(member)} className={`hover:bg-neon-blue/10 hover:text-neon-blue ${isTablet ? 'px-2 py-1' : ''}`}><CreditCard className={`${iconClass}`} /></Button>
+
+                        {/* Attendance action: Sign In / Doing workout (click -> Sign Out) / Attended */}
+                        {(() => {
+                          const att = todayAttendanceMap[String(member.id)];
+                          const processing = Boolean(attendanceProcessing[String(member.id)]);
+                          // if there is no attendance today -> show Sign In
+                          if (!att) {
+                            return (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleSignIn(member)}
+                                className={`${isTablet ? 'px-2 py-1 text-sm' : ''} text-green-600 hover:bg-neon-green/10`}
+                                disabled={processing}
+                                title="Sign in for today"
+                              >
+                                {processing ? '...' : 'Sign In'}
+                              </Button>
+                            );
+                          }
+
+                          // if signed in but not signed out -> show "Doing workout" and clicking it signs out
+                          const hasSignIn = att.sign_in || att.signIn || att.signInAt || att.sign_in_at;
+                          const hasSignOut = att.sign_out || att.signOut || att.signOutAt || att.sign_out_at;
+                          if (hasSignIn && !hasSignOut) {
+                            return (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleSignOut(member)}
+                                className={`${isTablet ? 'px-2 py-1 text-sm' : 'px-3 py-1'} text-red-600 hover:bg-red-500/10`}
+                                disabled={processing}
+                                title="Doing workout — click to sign out"
+                              >
+                                {processing ? '...' : 'Doing workout'}
+                              </Button>
+                            );
+                          }
+
+                          // if signed out already -> show "Attended"
+                          if (hasSignIn && hasSignOut) {
+                            return (
+                              <Badge className={isTablet ? 'text-xs px-2 py-1' : 'px-2 py-0.5'}>Attended</Badge>
+                            );
+                          }
+
+                          // fallback
+                          return (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleSignIn(member)}
+                              disabled={processing}
+                              title="Mark attendance"
+                              className={`${isTablet ? 'px-2 py-1 text-sm' : ''}`}
+                            >
+                              {processing ? '...' : 'Attend'}
+                            </Button>
+                          );
+                        })()}
 
                         {member.is_active === false || member.status === 'expired' ? (
                           <Button variant="ghost" size="sm" onClick={() => handleRestore(member.id)} className={`text-green-600 hover:bg-neon-green/10 ${isTablet ? 'px-2 py-1 text-sm' : ''}`}>Restore</Button>
@@ -1316,33 +1475,6 @@ export function MembershipManagement() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Quick stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-        <Card className="border-border/50">
-          <CardHeader className="pb-2"><CardTitle className={`${isTablet ? 'text-sm' : 'text-sm'}`}>Renewal This Week</CardTitle></CardHeader>
-          <CardContent>
-            <div className={`${isTablet ? 'text-lg' : 'text-2xl'} text-neon-green`}>23 members</div>
-            <p className={`${isTablet ? 'text-xs' : 'text-xs'} text-muted-foreground mt-1`}>Estimated revenue: {formatCurrencyINR(3450)}</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/50">
-          <CardHeader className="pb-2"><CardTitle className={`${isTablet ? 'text-sm' : 'text-sm'}`}>New Members (30 days)</CardTitle></CardHeader>
-          <CardContent>
-            <div className={`${isTablet ? 'text-lg' : 'text-2xl'} text-neon-blue`}>18 members</div>
-            <p className={`${isTablet ? 'text-xs' : 'text-xs'} text-muted-foreground mt-1`}>+15% from last month</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/50">
-          <CardHeader className="pb-2"><CardTitle className={`${isTablet ? 'text-sm' : 'text-sm'}`}>Retention Rate</CardTitle></CardHeader>
-          <CardContent>
-            <div className={`${isTablet ? 'text-lg' : 'text-2xl'} text-purple-400`}>87%</div>
-            <p className={`${isTablet ? 'text-xs' : 'text-xs'} text-muted-foreground mt-1`}>Above industry average</p>
-          </CardContent>
-        </Card>
-      </div>
     </div>
   );
 }
