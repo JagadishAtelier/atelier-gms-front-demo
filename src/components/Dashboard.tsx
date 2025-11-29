@@ -35,7 +35,6 @@ interface DashboardProps {
 const STORAGE_KEY = "gms_dashboard_v1"; // change if you want to invalidate all cached dashboards
 const SHOW_TOAST_ON_UPDATE = true; // set false to suppress toasts when background update arrives
 
-/* ---------- device hook: mobile / tablet / desktop ---------- */
 function useDevice() {
   const isBrowser = typeof window !== "undefined";
   const [width, setWidth] = useState<number>(isBrowser ? window.innerWidth : 1024);

@@ -1,4 +1,4 @@
-// MemberDashboard.tsx
+// src/components/MemberDashboard.tsx
 import React, { useEffect, useState } from "react";
 import { NavigationItem } from "../App";
 import {
@@ -24,6 +24,7 @@ import {
 import { motion } from "framer-motion";
 import memberService from "../service/memberService.js"; // uses getMembersbyEmail()
 import membermeasurementService from "../service/membermeasurementService.js"; // new: measurements
+import memberdashboardService from "../service/memberdashboardService.js"; // <-- new service
 
 /* ---------- Types ---------- */
 interface Member {
@@ -162,6 +163,7 @@ function SpeedometerGauge({ value, max, size = 160, arcColor = "#3b82f6", trackC
 }
 
 /* ----------------- Dummy dashboard data (keeps original dashboard feel) -----------------*/
+// kept as fallback if API call fails
 const dummyData: any = (() => {
   const now = Date.now();
   return {
@@ -191,7 +193,6 @@ const dummyData: any = (() => {
     ],
     notices: [
       { title: "Invoice #1023", summary: "Monthly invoice generated", ts: now - 1000 * 60 * 60 * 24 * 3 },
-      { title: "Trainer message", summary: "Change in class schedule", ts: now - 1000 * 60 * 60 * 24 * 6 },
     ],
   };
 })();
@@ -227,21 +228,43 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
   });
   const [measureSubmitting, setMeasureSubmitting] = useState(false);
 
-  // fetch dashboard data (simulated)
+  // fetch dashboard data (real)
   useEffect(() => {
     let mounted = true;
     setIsUpdating(true);
+    setLoading(true);
 
-    const t = window.setTimeout(() => {
-      if (!mounted) return;
-      setDashboardData(dummyData);
-      setLoading(false);
-      setIsUpdating(false);
-    }, 450);
+    async function loadDashboard() {
+      try {
+        const resp = await memberdashboardService.getMemberDashboard();
+        // resp might be: { status, message, data: {...} } or { data: {...} } or {...}
+        const payload =
+          resp?.data && typeof resp.data === "object" ? resp.data : (resp && typeof resp === "object" && resp.status ? resp.data || resp : resp);
+
+        // prefer payload if object, else fallback to dummy
+        const final = payload && Object.keys(payload).length > 0 ? payload : dummyData;
+
+        if (mounted) {
+          setDashboardData(final);
+          setLoading(false);
+          setIsUpdating(false);
+        }
+      } catch (err: any) {
+        console.error("Failed to load dashboard from API", err);
+        if (mounted) {
+          // fallback to dummy data so UI still works
+          setDashboardData(dummyData);
+          setLoading(false);
+          setIsUpdating(false);
+          toast.error(err?.message || "Failed to load dashboard, showing fallback data");
+        }
+      }
+    }
+
+    loadDashboard();
 
     return () => {
       mounted = false;
-      window.clearTimeout(t);
     };
   }, []);
 
@@ -593,8 +616,7 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
             <div className="flex items-center gap-6 ml-auto">
               <div className="text-center">
                 <div className="text-xs text-muted-foreground">Next payment</div>
-                <div className="text-lg font-semibold">₹{Number(nextPayment).toLocaleString()}</div>
-                <div className="text-xs text-muted-foreground">Due {new Date(dashboardData.nextPaymentDate).toLocaleDateString()}</div>
+                <div className="text-xs text-muted-foreground">Due {dashboardData.nextPaymentDate ? new Date(dashboardData.nextPaymentDate).toLocaleDateString() : "—"}</div>
               </div>
 
               <div className="text-center hidden sm:block">
@@ -644,7 +666,6 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
           </CardHeader>
           <CardContent className="flex-grow flex items-center justify-between">
             <div>
-              <div className="font-semibold">₹{Number(nextPayment).toLocaleString()}</div>
               <div className={`text-muted-foreground ${smallText}`}>Due: {dashboardData.nextPaymentDate ? new Date(dashboardData.nextPaymentDate).toLocaleDateString() : "—"}</div>
             </div>
           </CardContent>
@@ -793,7 +814,6 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
 
               <div className="pt-2 flex gap-2">
                 <button onClick={() => onNavigate && onNavigate("payments")} className="px-3 py-1 border rounded-md text-sm">View invoices</button>
-                <button onClick={() => onNavigate && onNavigate("profile")} className="px-3 py-1 border rounded-md text-sm">Edit profile</button>
               </div>
             </div>
           </CardContent>

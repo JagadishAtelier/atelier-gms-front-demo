@@ -14,10 +14,12 @@ import { Settings } from "./components/Settings";
 import authService from "./service/authService.js";
 import MemberWorkoutPlans from "./components/MemberWorkoutPlans";
 import  MemberRenewal  from "./components/MemberRenewal";
+import ResetPassword from "./components/ResetPassword";
 
 export type NavigationItem =
   | "dashboard"
   | "member-dashboard"
+  | "reset-password"
   | "member-workoutplans"
   | "member-renewal"
   | "members"
@@ -77,6 +79,8 @@ export default function App() {
         return <MemberWorkoutPlans />;
       case "member-renewal":
         return <MemberRenewal />
+      case "reset-password":
+        return <ResetPassword />
       case "members":
         return <MembershipManagement />;
       case "invoices":

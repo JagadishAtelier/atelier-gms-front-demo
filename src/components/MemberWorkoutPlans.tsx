@@ -20,66 +20,13 @@ import {
 import { Dumbbell, Apple, Clock, Calendar, Target, Download, Eye, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 
+import assignplanService from "../service/assignplanService.js";
+import authService from "../service/authService.js";
+
 /**
  * MemberWorkoutPlans.jsx
  * Shows at most one workout and one diet plan (most recently created of each).
  */
-
-/* ---------- Dummy data (simulate assigned plans) ---------- */
-const DUMMY_PLANS = [
-  {
-    id: "p1",
-    title: "Beginner Strength",
-    type: "workout",
-    description: "A gentle 3-day full-body routine to build foundational strength and technique.",
-    duration: "8 weeks",
-    difficulty: "beginner",
-    goals: ["Build muscle", "Improve posture", "Learn compound lifts"],
-    createdDate: new Date(Date.now() - 1000 * 60 * 60 * 24 * 14).toISOString(),
-    pdfUrl: null,
-    progress: 35,
-    trainer: { name: "Amit Kumar", phone: "+91-9876543210" },
-  },
-  {
-    id: "p2",
-    title: "Fat Loss HIIT",
-    type: "workout",
-    description: "High intensity intervals and metabolic conditioning for fat loss.",
-    duration: "6 weeks",
-    difficulty: "intermediate",
-    goals: ["Lose fat", "Improve cardio"],
-    createdDate: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString(),
-    pdfUrl: "/static/sample_plan_p2.pdf",
-    progress: 60,
-    trainer: { name: "Nisha Verma", phone: "+91-9123456789" },
-  },
-  {
-    id: "p3",
-    title: "Weight Loss Diet",
-    type: "diet",
-    description: "Balanced nutrition plan around a 1600–1800 kcal/day target with flexible swaps.",
-    duration: "12 weeks",
-    difficulty: "beginner",
-    goals: ["Lose weight", "Better eating habits"],
-    createdDate: new Date(Date.now() - 1000 * 60 * 60 * 24 * 21).toISOString(),
-    pdfUrl: "/static/sample_plan_p3.pdf",
-    progress: 25,
-    trainer: { name: "Dietitian Team", phone: "" },
-  },
-  {
-    id: "p4",
-    title: "Muscle Building Diet",
-    type: "diet",
-    description: "Higher calorie, protein-focused meal plans to support hypertrophy.",
-    duration: "10 weeks",
-    difficulty: "intermediate",
-    goals: ["Gain muscle", "Increase protein intake"],
-    createdDate: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(),
-    pdfUrl: null,
-    progress: 0,
-    trainer: { name: "Rohit Patel", phone: "+91-9988776655" },
-  },
-];
 
 /* ---------- helpers ---------- */
 const difficultyLabel = (d) => (d ? d.charAt(0).toUpperCase() + d.slice(1) : "Unknown");
@@ -124,6 +71,60 @@ function pickLatestPerType(plans = []) {
   return result;
 }
 
+/* utility to safely parse goals which may come as JSON-string or CSV */
+function parseGoals(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string") {
+    const s = raw.trim();
+    // try JSON parse
+    try {
+      const parsed = JSON.parse(s);
+      if (Array.isArray(parsed)) return parsed;
+    } catch (e) {
+      // not JSON, fall back to split by comma/newline
+    }
+    return s.split(/[\n,]+/).map((x) => x.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+/* map backend assigned-plan entry to UI-friendly plan shape */
+function mapAssignedToPlan(entry) {
+  const plan = entry?.plan || {};
+  const planTypeRaw = (plan?.plan_type || plan?.type || "").toString().toLowerCase();
+  let type = "workout";
+  if (planTypeRaw.includes("diet")) type = "diet";
+  else if (planTypeRaw.includes("workout")) type = "workout";
+
+  // choose a created date: prefer assigned entry createdAt / assigned_date, fallback to plan.createdAt
+  const createdDate =
+    entry?.createdAt ||
+    entry?.assigned_date ||
+    plan?.createdAt ||
+    plan?.created_at ||
+    entry?.created_at ||
+    null;
+
+  return {
+    // use assigned entry id (unique) as plan id in UI
+    id: entry?.id || plan?.id || `${plan?.id || "plan"}-${entry?.id || "assigned"}`,
+    title: plan?.title || plan?.name || "Untitled Plan",
+    type,
+    description: plan?.Description || plan?.description || plan?.desc || "",
+    duration: plan?.duration || "",
+    difficulty: (plan?.difficulty || "").toString().toLowerCase(),
+    goals: parseGoals(plan?.goals || plan?.Goals || plan?.goals_list),
+    createdDate,
+    pdfUrl: plan?.pdf_url || plan?.pdfUrl || null,
+    progress: Number(plan?.progress || 0) || 0,
+    trainer: {
+      name: entry?.created_by_name || plan?.created_by_name || entry?.created_by || "",
+      phone: "",
+    },
+  };
+}
+
 /* ---------- MemberWorkoutPlans component ---------- */
 export function MemberWorkoutPlans() {
   const [plans, setPlans] = useState([]);
@@ -139,10 +140,110 @@ export function MemberWorkoutPlans() {
       return {};
     }
   });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // load dummy data (simulate fetch)
-    setPlans(DUMMY_PLANS);
+    // fetch assigned plans for the logged-in member
+    let mounted = true;
+
+    async function loadPlans() {
+      setLoading(true);
+      try {
+        // try to get member id from stored user
+        const storedUser = authService.getCurrentUser();
+        let memberId = storedUser?.id || storedUser?._id || storedUser?.user_id || null;
+
+        // fallback: request profile from backend if not present in localStorage
+        if (!memberId) {
+          try {
+            const profile = await authService.getProfile();
+            memberId = profile?.id || profile?._id || profile?.user_id || null;
+          } catch (err) {
+            // ignore - we'll handle below
+            console.warn("Could not fetch profile for member id fallback:", err);
+          }
+        }
+
+        if (!memberId) {
+          // no member id available
+          if (mounted) {
+            setPlans([]);
+            toast?.message?.("No member ID found. Please login or refresh profile.");
+          }
+          return;
+        }
+
+        // call assignplanService to get assigned plans filtered by member id
+        const res = await assignplanService.getAssignedPlans({ memberId });
+
+        // normalize and extract array from many possible shapes:
+        // - API may return top-level array
+        // - or an object with .data = { data: [...] } (your sample)
+        // - or .data = [...] or .plans = [...] or .result = [...]
+        let assignedArray = [];
+
+        // If res is already an array -> that's the list
+        if (Array.isArray(res)) {
+          assignedArray = res;
+        } else if (res && typeof res === "object") {
+          // check nested shapes
+          if (Array.isArray(res.data)) {
+            // case: res.data is array
+            assignedArray = res.data;
+          } else if (res.data && typeof res.data === "object" && Array.isArray(res.data.data)) {
+            // case: res.data.data is array (matches your sample: res.data.data)
+            assignedArray = res.data.data;
+          } else if (Array.isArray(res.plans)) {
+            assignedArray = res.plans;
+          } else if (Array.isArray(res.result)) {
+            assignedArray = res.result;
+          } else if (Array.isArray(res.items)) {
+            assignedArray = res.items;
+          } else {
+            // try deeper search: find first array anywhere in the object tree (one-level deep)
+            let found = null;
+            for (const key of Object.keys(res)) {
+              const val = res[key];
+              if (Array.isArray(val)) {
+                found = val;
+                break;
+              }
+              if (val && typeof val === "object") {
+                // check one deeper
+                if (Array.isArray(val.data)) {
+                  found = val.data;
+                  break;
+                }
+                if (Array.isArray(val.items)) {
+                  found = val.items;
+                  break;
+                }
+              }
+            }
+            assignedArray = found || [];
+          }
+        }
+
+        // map assigned entries into UI plan shape
+        const mapped = (assignedArray || []).map(mapAssignedToPlan);
+
+        if (mounted) {
+          setPlans(mapped);
+        }
+      } catch (err) {
+        console.error("Failed to load assigned plans:", err);
+        toast?.error?.(err?.message || "Failed to load assigned plans");
+        if (mounted) setPlans([]);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+
+    loadPlans();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -224,7 +325,9 @@ export function MemberWorkoutPlans() {
 
       {/* Cards for the latest workout & diet (up to 2) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {visiblePlans.length === 0 ? (
+        {loading ? (
+          <div className="col-span-full text-center py-12 text-muted-foreground">Loading plans...</div>
+        ) : visiblePlans.length === 0 ? (
           <div className="col-span-full text-center py-12 text-muted-foreground">No active workout or diet plans found.</div>
         ) : (
           visiblePlans.map((plan) => {
@@ -295,18 +398,7 @@ export function MemberWorkoutPlans() {
                         </Button>
                       )}
 
-                      <div className="ml-auto flex items-center gap-2">
-                        <button
-                          onClick={() => toggleComplete(plan.id)}
-                          className={`inline-flex items-center gap-2 px-3 py-1 rounded ${
-                            completed ? "bg-emerald-600 text-white" : "bg-transparent border"
-                          }`}
-                          aria-pressed={completed}
-                        >
-                          <CheckCircle className="w-4 h-4" />
-                          <span className="text-sm">{completed ? "Completed" : "Mark done"}</span>
-                        </button>
-                      </div>
+                      
                     </div>
                   </div>
 

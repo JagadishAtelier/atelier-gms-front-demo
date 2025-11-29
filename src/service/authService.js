@@ -76,6 +76,36 @@ const authService = {
     return res.data;
   },
 
+  async forgotPassword(email) {
+    try {
+      const res = await axios.post(
+        `${API_URL}/forgot-password`,
+        { email },
+        { headers: { "Content-Type": "application/json" } }
+      );
+      return res.data;
+    } catch (err) {
+      throw err.response?.data || err;
+    }
+  },
+
+  /**
+   * 🔁 Reset Password using Email + OTP
+   * Payload: { email, otp, otp_token, newPassword }
+   */
+  async resetPasswordWithOtp({ email, otp, otp_token, newPassword }) {
+    try {
+      const res = await axios.post(
+        `${API_URL}/reset-password`,
+        { email, otp, otp_token, newPassword },
+        { headers: { "Content-Type": "application/json" } }
+      );
+      return res.data;
+    } catch (err) {
+      throw err.response?.data || err;
+    }
+  },
+
   /**
    * ✅ Send OTP (mock)
    */

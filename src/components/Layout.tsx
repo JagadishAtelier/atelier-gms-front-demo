@@ -34,6 +34,7 @@ const navigationItems = [
   { id: "dashboard" as NavigationItem, label: "Dashboard", icon: LayoutDashboard },
   { id: "member-dashboard" as NavigationItem, label: "Member Dashboard", icon: Dumbbell },
   { id: "member-workoutplans" as NavigationItem, label: "Workout Plans", icon: BarChart3 },
+  { id: "reset-password" as NavigationItem, label: "Reset Password", icon: BarChart3 }, 
   { id: "member-renewal" as NavigationItem, label: "Renewal", icon: BarChart3 },
   { id: "members" as NavigationItem, label: "Members", icon: Users },
   { id: "invoices" as NavigationItem, label: "Invoices", icon: FileText },
@@ -145,7 +146,7 @@ export function Layout({
   const visibleItems = React.useMemo(() => {
     const roleNorm = (role || "").toLowerCase().trim();
     if (roleNorm === "member") {
-      const allowed = new Set(["member-dashboard", "member-workoutplans", "member-renewal"]);
+      const allowed = new Set(["member-dashboard", "member-workoutplans", "member-renewal", "reset-password"]);
       return navigationItems.filter((it) => allowed.has(it.id));
     }
     if (roleNorm === "super admin") {
@@ -223,15 +224,6 @@ export function Layout({
 
       {/* Footer */}
       <div className="p-4 border-t border-border space-y-2">
-        <Button
-          variant="ghost"
-          className={`w-full ${sideCollapsed ? "justify-center" : "justify-start gap-3"} flex items-center`}
-          onClick={onThemeToggle}
-          title={sideCollapsed ? (theme === "dark" ? "Light Mode" : "Dark Mode") : undefined}
-        >
-          {theme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-          {!sideCollapsed && (theme === "dark" ? "Light Mode" : "Dark Mode")}
-        </Button>
 
         <Button
           variant="ghost"
@@ -328,7 +320,7 @@ export function Layout({
                   key={item.id}
                   variant="ghost"
                   size="sm"
-                  className={`flex-col gap-1 h-auto py-2 px-2 ${isActive ? "text-neon-green" : "text-muted-foreground"}`}
+                  className={`flex-col  gap-1 h-auto py-2 px-2 ${isActive ? "text-neon-green" : "text-muted-foreground"}`}
                   onClick={() => onNavigate(item.id)}
                 >
                   <Icon className="w-4 h-4" />
