@@ -51,21 +51,95 @@ const buildFormData = (payload) => {
   return formData;
 };
 
+/**
+ * Helper: convert FormData instance (or a FormData-like object) into a plain JSON object.
+ * - Tries to parse JSON strings back into arrays/objects when possible.
+ * - Throws if File/Blob values are encountered because JSON cannot carry binary files.
+ */
+const formDataToJson = (formData) => {
+  const obj = {};
+  // FormData supports for..of iteration of [key, value]
+  for (const [key, val] of formData.entries()) {
+    // If value is a File/Blob, we cannot convert to JSON safely
+    if (val instanceof File || val instanceof Blob) {
+      // You can either skip or throw — throwing to make the caller aware.
+      throw new Error(`Cannot convert FormData to JSON: field "${key}" contains a File/Blob.`);
+    }
+
+    const value = typeof val === "string" ? val : String(val);
+
+    // Try to detect JSON-encoded arrays/objects and parse them
+    const trimmed = value.trim();
+    if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+      try {
+        obj[key] = JSON.parse(trimmed);
+        continue;
+      } catch (e) {
+        // not valid JSON, fallthrough to store as string
+      }
+    }
+
+    // For booleans/numbers encoded as strings, attempt basic conversion
+    if (/^(true|false)$/i.test(trimmed)) {
+      obj[key] = trimmed.toLowerCase() === "true";
+      continue;
+    }
+    if (!Number.isNaN(Number(trimmed)) && trimmed !== "") {
+      // treat numeric strings as numbers
+      obj[key] = Number(trimmed);
+      continue;
+    }
+
+    obj[key] = value;
+  }
+  return obj;
+};
+
 const planService = {
   /**
-   * Create Plan (supports FormData or plain payload)
-   * Pass in a FormData instance (recommended) or a plain object.
+   * Create Plan (now sends JSON)
+   * Accepts:
+   * - plain object payload (recommended)
+   * - FormData instance (will be converted to JSON; **files are not supported** and will throw)
    */
   async createPlan(payload) {
     try {
-      // If caller passed FormData -> send as-is
-      const body = payload instanceof FormData ? payload : buildFormData(payload);
+      let jsonBody;
 
-      // Do NOT set Content-Type here; browser/axios will set proper boundary
-      const res = await axios.post(API_URL, body, {
+      if (payload instanceof FormData) {
+        // convert FormData -> JSON object (will throw if File/Blob present)
+        jsonBody = formDataToJson(payload);
+      } else if (payload && typeof payload === "object") {
+        // clone to avoid mutating caller object
+        jsonBody = { ...payload };
+
+        // If caller passed nested objects/arrays, ensure they are plain JSON (they already are)
+        // If caller passed FormData-like entries, user should pass a plain object instead.
+      } else {
+        // primitives or empty -> wrap
+        jsonBody = {};
+      }
+
+      // Ensure goals if present and is a stringified array, keep as array
+      if (typeof jsonBody.goals === "string") {
+        const trimmed = jsonBody.goals.trim();
+        if ((trimmed.startsWith("[") && trimmed.endsWith("]")) || trimmed.includes(",")) {
+          try {
+            jsonBody.goals = JSON.parse(trimmed);
+          } catch {
+            // fallback to comma-split
+            jsonBody.goals = trimmed.split(",").map((g) => g.trim()).filter(Boolean);
+          }
+        } else {
+          jsonBody.goals = trimmed.length ? [trimmed] : [];
+        }
+      }
+
+      // POST JSON body
+      const res = await axios.post(API_URL, jsonBody, {
         headers: {
           ...buildHeaders(),
-          // DO NOT set "Content-Type": "multipart/form-data" manually
+          "Content-Type": "application/json",
         },
       });
 
@@ -108,6 +182,7 @@ const planService = {
 
   /**
    * Update Plan (supports file upload)
+   * NOTE: This still uses the previous behavior (FormData allowed). You can change to JSON similarly if needed.
    */
   async updatePlan(id, payload) {
     try {
@@ -115,7 +190,7 @@ const planService = {
       const res = await axios.put(`${API_URL}/${encodeURIComponent(id)}`, body, {
         headers: {
           ...buildHeaders(),
-          // DO NOT set Content-Type manually
+          // DO NOT set Content-Type manually for multipart; axios/browser will handle it.
         },
       });
       return res.data;

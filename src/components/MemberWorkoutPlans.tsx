@@ -174,7 +174,7 @@ export function MemberWorkoutPlans() {
         }
 
         // call assignplanService to get assigned plans filtered by member id
-        const res = await assignplanService.getAssignedPlans({ memberId });
+        const res = await assignplanService.getAssignedPlanBymemberId();
 
         // normalize and extract array from many possible shapes:
         // - API may return top-level array
@@ -353,9 +353,7 @@ export function MemberWorkoutPlans() {
 
                 <CardContent className="space-y-3">
                   <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                    <div className="flex items-center gap-1">
-                      <Clock className="w-4 h-4" /> {plan.duration}
-                    </div>
+                    
                     <div className="flex items-center gap-1">
                       <Calendar className="w-4 h-4" /> {plan.createdDate ? new Date(plan.createdDate).toLocaleDateString() : "-"}
                     </div>
@@ -376,30 +374,12 @@ export function MemberWorkoutPlans() {
 
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-3">
-                      <div className="flex-1">
-                        <div className="text-xs text-muted-foreground mb-1">Progress</div>
-                        <ProgressBar percent={progress} />
-                      </div>
-
-                      <div className="w-28 text-right">
-                        <div className="text-sm font-semibold">{progress}%</div>
-                        <div className="text-xs text-muted-foreground">{completed ? "Completed" : "In progress"}</div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <Button onClick={() => openPdf(plan)} variant="ghost" className="inline-flex items-center gap-2">
-                        <Eye className="w-4 h-4" /> View
-                      </Button>
-
-                      {plan.pdfUrl && (
-                        <Button onClick={() => downloadPdf(plan)} variant="outline" className="inline-flex items-center gap-2">
-                          <Download className="w-4 h-4" /> Download
-                        </Button>
-                      )}
+                      
 
                       
                     </div>
+
+                    
                   </div>
 
                   <div className="text-xs text-muted-foreground">

@@ -78,6 +78,17 @@ const assignplanService = {
     }
   },
 
+  async getAssignedPlanBymemberId() {
+    try {
+      const res = await axios.get(`${BASE_API}/gms/plan/assignplanbymemberid`, {
+        headers: { ...buildHeaders() },
+      });
+      return res.data;
+    } catch (err) {
+      throw err.response?.data || err;
+    }
+  },
+
   /**
    * ❌ Soft Delete Assigned Plan
    */

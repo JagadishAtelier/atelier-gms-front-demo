@@ -53,12 +53,21 @@ interface PlanUI {
   title: string;
   type: "workout" | "diet";
   description: string;
-  duration: string;
+  duration?: string;
   difficulty: "beginner" | "intermediate" | "advanced";
-  assignedTo: string[]; // display names
+  assignedTo: string[];
   createdDate: string;
   goals: string[];
   pdfUrl?: string | null;
+  weekly?: {
+    monday?: string;
+    tuesday?: string;
+    wednesday?: string;
+    thursday?: string;
+    friday?: string;
+    saturday?: string;
+    sunday?: string;
+  };
 }
 
 interface MemberItem {
@@ -87,9 +96,6 @@ export function WorkoutPlans() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // file state
-  const [imageFile, setImageFile] = useState<File | null>(null);
-
   // PDF modal state
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [pdfToView, setPdfToView] = useState<string | null>(null);
@@ -105,20 +111,16 @@ export function WorkoutPlans() {
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
 
-  const [newPlan, setNewPlan] = useState({
-    title: "",
-    type: "workout" as "workout" | "diet",
-    description: "",
-    duration: "",
-    difficulty: "beginner" as "beginner" | "intermediate" | "advanced",
-    goals: "",
-  });
-
   // New: Assigned Members modal state (viewing assigned members for a plan)
   const [assignedMembersModalOpen, setAssignedMembersModalOpen] = useState(false);
   const [assignedMembersLoading, setAssignedMembersLoading] = useState(false);
   const [assignedMembers, setAssignedMembers] = useState<AssignmentItem[]>([]);
   const [selectedPlanForMembers, setSelectedPlanForMembers] = useState<PlanUI | null>(null);
+
+  // Weekly plan viewer modal (advanced calendar)
+  const [weeklyModalOpen, setWeeklyModalOpen] = useState(false);
+  const [weeklyPlanToView, setWeeklyPlanToView] = useState<Record<string, string> | null>(null);
+  const [weeklyPlanTitle, setWeeklyPlanTitle] = useState<string>("");
 
   const backendTypeFromUI = (t: "workout" | "diet") =>
     t === "workout" ? "Workout Plan" : "Diet Plan";
@@ -197,6 +199,15 @@ export function WorkoutPlans() {
   const normalizePlan = (raw: any, assignmentMap: Record<string, string[]>) => {
     const pdfUrl = raw.pdf_url || raw.pdfUrl || raw.pdf || raw.file || null;
     const assignedTo = assignmentMap?.[raw.id] ?? [];
+    const weekly = {
+      monday: raw.monday_plan || raw.monday || raw.week?.monday || "",
+      tuesday: raw.tuesday_plan || raw.tuesday || raw.week?.tuesday || "",
+      wednesday: raw.wednesday_plan || raw.wednesday || raw.week?.wednesday || "",
+      thursday: raw.thursday_plan || raw.thursday || raw.week?.thursday || "",
+      friday: raw.friday_plan || raw.friday || raw.week?.friday || "",
+      saturday: raw.saturday_plan || raw.saturday || raw.week?.saturday || "",
+      sunday: raw.sunday_plan || raw.sunday || raw.week?.sunday || "",
+    };
 
     return {
       id: raw.id,
@@ -209,6 +220,7 @@ export function WorkoutPlans() {
       createdDate: raw.createdAt || raw.created_date || raw.created_date_time || "",
       goals: safeParseGoals(raw.goals),
       pdfUrl,
+      weekly,
     } as PlanUI;
   };
 
@@ -324,48 +336,92 @@ export function WorkoutPlans() {
     setPdfModalOpen(true);
   };
 
-  // Create plan handler (unchanged)
+  // Create plan state (removed duration & image, added weekdays)
+  const [newPlan, setNewPlan] = useState({
+    title: "",
+    type: "workout" as "workout" | "diet",
+    description: "",
+    difficulty: "beginner" as "beginner" | "intermediate" | "advanced",
+    goals: "",
+    monday_plan: "",
+    tuesday_plan: "",
+    wednesday_plan: "",
+    thursday_plan: "",
+    friday_plan: "",
+    saturday_plan: "",
+    sunday_plan: "",
+  });
+
+  // Create plan handler (updated to include weekday fields and correct enum mapping)
   const handleCreatePlan = async () => {
-    if (!newPlan.title.trim()) return toast.error("Please add a plan title");
-    if (!newPlan.duration.trim()) return toast.error("Please add duration");
-
-    const formData = new FormData();
-    formData.append("title", newPlan.title.trim());
-    formData.append("plan_type", backendTypeFromUI(newPlan.type));
-    formData.append("difficulty", backendDifficultyFromUI(newPlan.difficulty));
-    formData.append("duration", newPlan.duration.trim());
-
-    const goalsArray = newPlan.goals
-      .split(",")
-      .map((g) => g.trim())
-      .filter(Boolean);
-    formData.append("goals", JSON.stringify(goalsArray));
-    formData.append("Description", newPlan.description?.trim() || "");
-
-    if (imageFile) {
-      formData.append("image", imageFile, imageFile.name);
+    if (!newPlan.title || newPlan.title.trim().length < 3) {
+      return toast.error("Title must be at least 3 characters");
     }
 
+    setLoading(true);
     try {
-      setLoading(true);
-      const res = await planService.createPlan(formData);
+      // backend expects "Workout Plan" or "Diet Plan"
+      const planType = newPlan.type === "diet" ? "Diet Plan" : "Workout Plan";
+
+      // difficulty: convert "beginner" -> "Beginner"
+      const difficultyFormatted =
+        newPlan.difficulty && typeof newPlan.difficulty === "string"
+          ? newPlan.difficulty.charAt(0).toUpperCase() + newPlan.difficulty.slice(1).toLowerCase()
+          : "Beginner";
+
+      const payload = new FormData();
+      payload.append("title", newPlan.title.trim());
+      payload.append("plan_type", planType);
+      payload.append("difficulty", difficultyFormatted);
+
+      const goalsArray = (newPlan.goals || "")
+        .split(",")
+        .map((g) => g.trim())
+        .filter(Boolean);
+      // append goals as JSON string (backend normalizer handles it)
+      if (goalsArray.length > 0) payload.append("goals", JSON.stringify(goalsArray));
+      else payload.append("goals", JSON.stringify([]));
+
+      if ((newPlan.description || "").trim().length > 0) {
+        payload.append("Description", newPlan.description.trim());
+      }
+
+      // weekly fields - append only if non-empty to keep payload small
+      if ((newPlan.monday_plan || "").trim().length > 0) payload.append("monday_plan", newPlan.monday_plan.trim());
+      if ((newPlan.tuesday_plan || "").trim().length > 0) payload.append("tuesday_plan", newPlan.tuesday_plan.trim());
+      if ((newPlan.wednesday_plan || "").trim().length > 0) payload.append("wednesday_plan", newPlan.wednesday_plan.trim());
+      if ((newPlan.thursday_plan || "").trim().length > 0) payload.append("thursday_plan", newPlan.thursday_plan.trim());
+      if ((newPlan.friday_plan || "").trim().length > 0) payload.append("friday_plan", newPlan.friday_plan.trim());
+      if ((newPlan.saturday_plan || "").trim().length > 0) payload.append("saturday_plan", newPlan.saturday_plan.trim());
+      if ((newPlan.sunday_plan || "").trim().length > 0) payload.append("sunday_plan", newPlan.sunday_plan.trim());
+
+      const res = await planService.createPlan(payload);
+
+      // refresh list, close modal and reset form (keeps other behaviour unchanged)
       await fetchPlans();
       setIsCreatePlanOpen(false);
       setNewPlan({
         title: "",
         type: "workout",
         description: "",
-        duration: "",
         difficulty: "beginner",
         goals: "",
+        monday_plan: "",
+        tuesday_plan: "",
+        wednesday_plan: "",
+        thursday_plan: "",
+        friday_plan: "",
+        saturday_plan: "",
+        sunday_plan: "",
       });
-      setImageFile(null);
-      const successMsg = res?.message || res?.data?.message || "Plan created";
-      toast.success(successMsg);
-    } catch (err: any) {
-      console.error("Failed to create plan", err);
-      const message = err?.response?.data?.message || err?.message || "Failed to create plan";
-      toast.error(message);
+
+      console.log(setNewPlan);
+
+      toast.success(res?.message || "Plan created");
+    } catch (e: any) {
+      // server error normalization handled inside service; show friendly message
+      const msg = e?.message || (e?.errors && JSON.stringify(e.errors)) || "Failed to create plan";
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -541,6 +597,27 @@ export function WorkoutPlans() {
     }
   };
 
+  // Open weekly calendar viewer
+  const openWeeklyPlanModal = (plan: PlanUI) => {
+    setWeeklyPlanTitle(plan.title || "Weekly Plan");
+    setWeeklyPlanToView(plan.weekly || {
+      monday: "",
+      tuesday: "",
+      wednesday: "",
+      thursday: "",
+      friday: "",
+      saturday: "",
+      sunday: "",
+    });
+    setWeeklyModalOpen(true);
+  };
+
+  const closeWeeklyPlanModal = () => {
+    setWeeklyModalOpen(false);
+    setWeeklyPlanToView(null);
+    setWeeklyPlanTitle("");
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -556,97 +633,109 @@ export function WorkoutPlans() {
               Create New Plan
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[525px]">
+          {/* KEEP modal width same as assign modal: sm:max-w-[525px] */}
+          <DialogContent className="sm:max-w-[525px] w-full flex flex-col max-h-[80vh]">
+
             <DialogHeader>
               <DialogTitle>Create New Plan</DialogTitle>
-              <p className="text-sm text-muted-foreground">Create a personalized workout or diet plan for your members.</p>
+              <p className="text-sm text-muted-foreground">
+                Create a personalized workout or diet plan for your members.
+              </p>
             </DialogHeader>
 
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="title">Plan Title</Label>
-                <Input
-                  id="title"
-                  value={newPlan.title}
-                  onChange={(e) => setNewPlan({ ...newPlan, title: e.target.value })}
-                  placeholder="Enter plan title"
-                />
-              </div>
+            {/* ✅ Scrollable Form Area */}
+            <div className="flex-1 overflow-y-auto pr-1 mt-4">
+              <div className="grid gap-4 pb-4">
 
-              <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="type">Plan Type</Label>
-                  <Select value={newPlan.type} onValueChange={(value: "workout" | "diet") => setNewPlan({ ...newPlan, type: value })}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="workout">Workout Plan</SelectItem>
-                      <SelectItem value="diet">Diet Plan</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="title">Plan Title</Label>
+                  <Input
+                    id="title"
+                    value={newPlan.title}
+                    onChange={(e) => setNewPlan({ ...newPlan, title: e.target.value })}
+                    placeholder="Enter plan title"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="type">Plan Type</Label>
+                    <Select value={newPlan.type} onValueChange={(value) => setNewPlan({ ...newPlan, type: value as any })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="workout">Workout Plan</SelectItem>
+                        <SelectItem value="diet">Diet Plan</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="difficulty">Difficulty</Label>
+                    <Select value={newPlan.difficulty} onValueChange={(value) => setNewPlan({ ...newPlan, difficulty: value as any })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="beginner">Beginner</SelectItem>
+                        <SelectItem value="intermediate">Intermediate</SelectItem>
+                        <SelectItem value="advanced">Advanced</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Goals */}
+                <div className="grid gap-2">
+                  <Label htmlFor="goals">Goals (comma separated)</Label>
+                  <Input
+                    id="goals"
+                    value={newPlan.goals}
+                    onChange={(e) => setNewPlan({ ...newPlan, goals: e.target.value })}
+                    placeholder="e.g., Build muscle, Lose weight"
+                  />
                 </div>
 
                 <div className="grid gap-2">
-                  <Label htmlFor="difficulty">Difficulty</Label>
-                  <Select value={newPlan.difficulty} onValueChange={(value: "beginner" | "intermediate" | "advanced") => setNewPlan({ ...newPlan, difficulty: value })}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="beginner">Beginner</SelectItem>
-                      <SelectItem value="intermediate">Intermediate</SelectItem>
-                      <SelectItem value="advanced">Advanced</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="description">Description</Label>
+                  <Textarea
+                    id="description"
+                    value={newPlan.description}
+                    onChange={(e) => setNewPlan({ ...newPlan, description: e.target.value })}
+                    placeholder="Detailed description..."
+                    rows={3}
+                  />
                 </div>
-              </div>
 
-              <div className="grid gap-2">
-                <Label htmlFor="duration">Duration</Label>
-                <Input
-                  id="duration"
-                  value={newPlan.duration}
-                  onChange={(e) => setNewPlan({ ...newPlan, duration: e.target.value })}
-                  placeholder="e.g., 8 weeks, 3 months"
-                />
-              </div>
+                {/* Weekly Plans */}
+                <div className="mt-2">
+                  <h4 className="text-sm font-medium mb-2 text-neon-blue">Weekly Plan</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {[
+                      ["monday_plan", "Monday"],
+                      ["tuesday_plan", "Tuesday"],
+                      ["wednesday_plan", "Wednesday"],
+                      ["thursday_plan", "Thursday"],
+                      ["friday_plan", "Friday"],
+                      ["saturday_plan", "Saturday"],
+                      ["sunday_plan", "Sunday"],
+                    ].map(([key, label]) => (
+                      <div key={key} className="p-3 border rounded">
+                        <div className="mb-2 text-xs font-medium">{label}</div>
+                        <Textarea
+                          value={(newPlan as any)[key]}
+                          onChange={(e) => setNewPlan(s => ({ ...s, [key]: e.target.value }))}
+                          rows={3}
+                          placeholder={`${label} details...`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
-              <div className="grid gap-2">
-                <Label htmlFor="goals">Goals (comma separated)</Label>
-                <Input
-                  id="goals"
-                  value={newPlan.goals}
-                  onChange={(e) => setNewPlan({ ...newPlan, goals: e.target.value })}
-                  placeholder="e.g., Build muscle, Lose weight"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
-                  value={newPlan.description}
-                  onChange={(e) => setNewPlan({ ...newPlan, description: e.target.value })}
-                  placeholder="Detailed description..."
-                  rows={4}
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="image">Plan Image (optional)</Label>
-                <Input
-                  id="image"
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => setImageFile(e.target.files?.[0] || null)}
-                />
               </div>
             </div>
 
-            <DialogFooter>
+            {/* ✅ Footer Stays Visible */}
+            <DialogFooter className="mt-2">
               <Button
-                type="button"
                 onClick={handleCreatePlan}
                 className="bg-gradient-to-r from-neon-green to-neon-blue text-white"
                 disabled={loading}
@@ -656,6 +745,8 @@ export function WorkoutPlans() {
             </DialogFooter>
 
           </DialogContent>
+
+
         </Dialog>
       </div>
 
@@ -697,10 +788,8 @@ export function WorkoutPlans() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-4 h-4" />
-                        {plan.duration}
-                      </div>
+                      {/* duration possibly empty now */}
+                      
                       <div className="flex items-center gap-1">
                         <Calendar className="w-4 h-4" />
                         {plan.createdDate ? new Date(plan.createdDate).toLocaleDateString() : "-"}
@@ -743,6 +832,9 @@ export function WorkoutPlans() {
                     {/* Action Buttons */}
                     <div className="flex items-center gap-2 pt-2">
                       <Button onClick={() => openAssignModal(plan)} variant="ghost">Assign</Button>
+
+                      {/* Weekly calendar viewer button */}
+                      <Button onClick={() => openWeeklyPlanModal(plan)} variant="ghost">Weekly View</Button>
 
                       {plan.pdfUrl && (
                         <>
@@ -976,6 +1068,9 @@ export function WorkoutPlans() {
                       <div className="text-xs text-muted-foreground">Assigned: {m.assigned_date ? new Date(m.assigned_date).toLocaleString() : "-"}</div>
                       {m.notes && <div className="text-xs mt-1">Notes: {m.notes}</div>}
                     </div>
+                    <div>
+                      <Button variant="ghost" onClick={() => handleUnassign(m.id)}>Unassign</Button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -989,6 +1084,58 @@ export function WorkoutPlans() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* WEEKLY PLAN (Advanced Calendar) Viewer Dialog */}
+      <Dialog open={weeklyModalOpen} onOpenChange={(open) => { if (!open) closeWeeklyPlanModal(); }}>
+  <DialogContent className="sm:max-w-[525px] w-full flex flex-col max-h-[80vh]">
+    <DialogHeader>
+      <DialogTitle>{weeklyPlanTitle}</DialogTitle>
+      <p className="text-sm text-muted-foreground">Advanced weekly calendar view of the plan.</p>
+    </DialogHeader>
+
+    {/* Scrollable area: flex-1 so it grows and scrolls, keeping header/footer fixed */}
+    <div className="flex-1 overflow-y-auto py-4">
+      {weeklyPlanToView ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 px-1 pb-2">
+          {[
+            ["Monday", weeklyPlanToView.monday || ""],
+            ["Tuesday", weeklyPlanToView.tuesday || ""],
+            ["Wednesday", weeklyPlanToView.wednesday || ""],
+            ["Thursday", weeklyPlanToView.thursday || ""],
+            ["Friday", weeklyPlanToView.friday || ""],
+            ["Saturday", weeklyPlanToView.saturday || ""],
+            ["Sunday", weeklyPlanToView.sunday || ""],
+          ].map(([day, content]) => (
+            <div
+              key={day}
+              className="p-3 border rounded shadow-sm bg-white flex flex-col"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="font-medium">{day}</div>
+                <div className="text-xs text-muted-foreground">Quick view</div>
+              </div>
+
+              {/* make the content area inside each card scrollable if very long */}
+              <div className="text-sm text-muted-foreground whitespace-pre-wrap min-h-[56px] max-h-[28vh] overflow-auto">
+                {content || <span className="text-xs text-muted-foreground">No entry</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="px-2">No weekly plan available</div>
+      )}
+    </div>
+
+    {/* Footer stays visible (won't be pushed off-screen) */}
+    <DialogFooter className="flex-shrink-0">
+      <div className="flex items-center gap-2">
+        <Button onClick={closeWeeklyPlanModal}>Close</Button>
+      </div>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+
     </div>
   );
 }

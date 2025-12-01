@@ -10,7 +10,7 @@ import {
 } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { toast } from "sonner";
-import { Users, AlertTriangle, DollarSign, Clock, Phone, Clipboard, Edit2, Mail } from "lucide-react";
+import { Users, AlertTriangle, DollarSign, Clock, Phone, Clipboard, Edit2, Mail, PencilRuler, BicepsFlexed } from "lucide-react";
 import {
   ResponsiveContainer,
   LineChart,
@@ -25,6 +25,7 @@ import { motion } from "framer-motion";
 import memberService from "../service/memberService.js"; // uses getMembersbyEmail()
 import membermeasurementService from "../service/membermeasurementService.js"; // new: measurements
 import memberdashboardService from "../service/memberdashboardService.js"; // <-- new service
+import assignplanService from "../service/assignplanService.js"; // <-- newly added
 
 /* ---------- Types ---------- */
 interface Member {
@@ -41,6 +42,39 @@ interface Member {
   is_active?: boolean;
   createdAt?: string;
   updatedAt?: string;
+  [k: string]: any;
+}
+
+interface Plan {
+  id?: string;
+  title?: string;
+  plan_type?: string;
+  difficulty?: string;
+  goals?: string;
+  Description?: string;
+  monday_plan?: string;
+  tuesday_plan?: string;
+  wednesday_plan?: string;
+  thursday_plan?: string;
+  friday_plan?: string;
+  saturday_plan?: string;
+  sunday_plan?: string;
+  // possible diet fields -- optional
+  diet_plan?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  [k: string]: any;
+}
+
+interface AssignedPlan {
+  id?: string;
+  plan?: Plan;
+  assigned_date?: string;
+  notes?: string | null;
+  is_active?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  member?: Member;
   [k: string]: any;
 }
 
@@ -228,6 +262,11 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
   });
   const [measureSubmitting, setMeasureSubmitting] = useState(false);
 
+  // assigned plan state
+  const [assignedPlans, setAssignedPlans] = useState<AssignedPlan[] | null>(null);
+  const [assignedPlanLoading, setAssignedPlanLoading] = useState(false);
+  const [activeAssignedPlan, setActiveAssignedPlan] = useState<AssignedPlan | null>(null);
+
   // fetch dashboard data (real)
   useEffect(() => {
     let mounted = true;
@@ -320,6 +359,55 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
       mounted = false;
     };
   }, []); // run once on mount
+
+  // fetch assigned plan(s) for the current member (backend reads token / member)
+  useEffect(() => {
+    let mounted = true;
+    const fetchAssignedPlans = async () => {
+      if (!member?.id) {
+        setAssignedPlans(null);
+        setActiveAssignedPlan(null);
+        return;
+      }
+
+      setAssignedPlanLoading(true);
+      try {
+        const res = await assignplanService.getAssignedPlanBymemberId();
+        // Normalize response (could be { status, data: [...] } or array)
+        const list = normalizeListFromResponse(res);
+        const plans: AssignedPlan[] = list.map((it: any) => (it.data ? it.data : it));
+        if (mounted) {
+          setAssignedPlans(plans);
+
+          // pick the most recent active assigned plan (by assigned_date or createdAt)
+          const sorted = plans
+            .filter(p => p)
+            .sort((a: any, b: any) => {
+              const da = new Date(a.assigned_date ?? a.createdAt ?? 0).getTime();
+              const db = new Date(b.assigned_date ?? b.createdAt ?? 0).getTime();
+              return db - da;
+            });
+
+          const active = sorted.find(p => p.is_active !== false) ?? sorted[0] ?? null;
+          setActiveAssignedPlan(active);
+        }
+      } catch (err: any) {
+        console.error("Failed to fetch assigned plans", err);
+        if (mounted) {
+          setAssignedPlans(null);
+          setActiveAssignedPlan(null);
+          toast.error(err?.message || "Failed to load assigned plans");
+        }
+      } finally {
+        if (mounted) setAssignedPlanLoading(false);
+      }
+    };
+
+    fetchAssignedPlans();
+    return () => {
+      mounted = false;
+    };
+  }, [member?.id]);
 
   // fetch latest measurement for the member when member is available
   useEffect(() => {
@@ -567,6 +655,40 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
 
   const attendancePct = Math.round((attendanceGoal === 0 ? 0 : (attendance / attendanceGoal) * 100));
 
+  // helpers to extract today's plan
+  const weekdayKeyForDate = (d: Date) => {
+    // return the plan field name as in API: monday_plan, tuesday_plan, ...
+    const map = ["sunday_plan", "monday_plan", "tuesday_plan", "wednesday_plan", "thursday_plan", "friday_plan", "saturday_plan"];
+    return map[d.getDay()] ?? "monday_plan";
+  };
+
+  const getTodayWorkoutText = (plan?: Plan) => {
+    if (!plan) return null;
+    const key = weekdayKeyForDate(new Date());
+    // @ts-ignore
+    const txt = plan[key] ?? null;
+    return txt;
+  };
+
+  const getDietTextFromPlan = (plan?: Plan) => {
+    if (!plan) return null;
+    // prefer explicit diet_plan, else Description, else goals
+    return (plan.diet_plan && plan.diet_plan.trim()) || (plan.Description && plan.Description.trim()) || (plan.goals && String(plan.goals).trim()) || null;
+  };
+
+  const renderPlanText = (txt?: string | null) => {
+    if (!txt) return <div className="text-sm text-muted-foreground">Not provided</div>;
+    // preserve newlines
+    const parts = txt.split(/\r?\n/).filter(Boolean);
+    return (
+      <div className="text-sm leading-relaxed whitespace-pre-wrap">
+        {parts.map((p, i) => (
+          <p key={i} className="mb-1">{p}</p>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6 px-2 md:px-0">
       {/* ---------- Advanced profile header (new) ---------- */}
@@ -675,7 +797,7 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
           <CardHeader className="">
             <CardTitle className="flex items-center gap-2 text-sm font-medium">
               <IconBubble className="bg-gradient-to-br from-indigo-100 to-cyan-50" ariaLabel="Plans">
-                <Clipboard className="h-5 w-5 text-indigo-500" style={{color:"#2563eb"}} />
+                <BicepsFlexed className="h-5 w-5 text-indigo-500" style={{color:"#2563eb"}} />
               </IconBubble>
               <span>Workout & Diet Plans</span>
             </CardTitle>
@@ -690,23 +812,43 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
           </CardContent>
         </Card>
 
-        <Card className="p-2 flex flex-col justify-between" style={{ borderRadius: 12,  border: "4px solid rgba(255,255,255,0.06)" }}>
-          <CardHeader className="">
+        <Card className="p-1 flex flex-col " style={{ borderRadius: 12,  border: "4px solid rgba(255,255,255,0.06)" }}>
+          <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm font-medium">
-              <IconBubble className="bg-gradient-to-br from-rose-50 to-pink-50" ariaLabel="Support">
-                <Phone className="h-5 w-5 text-pink-500" style={{color:"#059669"}}/>
+            <IconBubble className="bg-gradient-to-br from-indigo-100 to-cyan-50" ariaLabel="Plans">
+                <PencilRuler className="h-5 w-5 text-indigo-500" style={{color:"#059669"}} />
               </IconBubble>
-              <span>Trainer</span>
-            </CardTitle>
+            <span>Latest Measurement</span></CardTitle>
           </CardHeader>
-          <CardContent className="flex-grow flex items-center justify-between">
-            <div>
-              <div className="font-semibold">{dashboardData.trainer?.name ?? "—"}</div>
-              <div className={`text-muted-foreground ${smallText}`}>{dashboardData.trainer?.phone ?? "No contact"}</div>
-            </div>
-            <div className="text-right">
-              <button onClick={() => window.open(`tel:${dashboardData.trainer?.phone ?? ""}`)} className="px-3 py-1 border rounded-md text-xs hover:shadow-sm">Call</button>
-            </div>
+          <CardContent>
+            {measurementLoading ? (
+              <div className="text-sm text-muted-foreground">Loading measurement...</div>
+            ) : latestMeasurement && measurementFresh ? (
+              <div className="">
+                <div className="flex  top-0 gap-4">
+                  <div>
+                    <div className="text-xs text-muted-foreground">Weight</div>
+                    <div className="text-lg ">{latestMeasurement.weight != null ? `${latestMeasurement.weight} kg` : "—"}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">Height</div>
+                    <div className="text-lg ">{latestMeasurement.height != null ? `${latestMeasurement.height} cm` : "—"}</div>
+                  </div>
+                </div>
+                <div className="text-xs text-muted-foreground">Measured on: {latestMeasurement.measurement_date ? new Date(latestMeasurement.measurement_date).toLocaleDateString() : "—"}</div>
+                <div className="">
+                  {/* <button onClick={() => onNavigate ? onNavigate("measurements" as unknown as NavigationItem) : window.location.href = "/measurements"} className="px-3 py-1 rounded bg-gradient-to-r from-neon-green to-neon-blue text-white">View Measurements</button> */}
+                </div>
+              </div>
+            ) : (
+              <div className="">
+                <div className="text-sm text-muted-foreground">No recent measurement found (last 14 days).</div>
+                <div className="text-sm">Please measure again to keep your records up-to-date.</div>
+                <div className="pt-1">
+                  <button onClick={handleAddMeasurement} className="px-3 py-1 rounded bg-gradient-to-r from-neon-green to-neon-blue text-white">Add Measurement</button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -715,36 +857,44 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="p-4">
           <CardHeader>
-            <CardTitle className="text-sm font-medium">Latest Measurement</CardTitle>
-            <CardDescription className={isTablet ? "text-xs" : ""}>Shows most recent height & weight (if measured within 14 days)</CardDescription>
+            <CardTitle className={`flex items-center gap-2 ${isTablet ? "text-base" : "text-lg"}`}>
+              <IconBubble className="bg-gradient-to-br from-blue-100 to-cyan-50"> 
+                <BicepsFlexed className="h-4 w-4" style={{color: "#ff0000ff"}} />
+              </IconBubble>
+              <span>Today Workout or Ditet</span>
+            </CardTitle>
+            <CardDescription className={isTablet ? "text-xs" : ""}>Your Today workout or diet plan</CardDescription>
           </CardHeader>
           <CardContent>
-            {measurementLoading ? (
-              <div className="text-sm text-muted-foreground">Loading measurement...</div>
-            ) : latestMeasurement && measurementFresh ? (
-              <div className="space-y-2">
-                <div className="flex items-center gap-4">
+            {/* Today's Plan: from assigned plan (if any) */}
+            {assignedPlanLoading ? (
+              <div className="text-sm text-muted-foreground">Loading today's plan...</div>
+            ) : activeAssignedPlan && activeAssignedPlan.plan ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-xs text-muted-foreground">Weight</div>
-                    <div className="text-lg font-semibold">{latestMeasurement.weight != null ? `${latestMeasurement.weight} kg` : "—"}</div>
+                    <div className="text-xs text-muted-foreground">Plan</div>
+                    <div className="text-lg font-semibold">{activeAssignedPlan.plan.title ?? "Assigned Plan"}</div>
+                    <div className="text-xs text-muted-foreground">{activeAssignedPlan.plan.plan_type ?? activeAssignedPlan.plan.difficulty ?? ""}</div>
                   </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Height</div>
-                    <div className="text-lg font-semibold">{latestMeasurement.height != null ? `${latestMeasurement.height} cm` : "—"}</div>
+                  <div className="text-right">
+                    <div className="text-xs text-muted-foreground">Assigned on</div>
+                    <div className="text-sm">{activeAssignedPlan.assigned_date ? new Date(activeAssignedPlan.assigned_date).toLocaleDateString() : (activeAssignedPlan.createdAt ? new Date(activeAssignedPlan.createdAt).toLocaleDateString() : "—")}</div>
                   </div>
                 </div>
-                <div className="text-xs text-muted-foreground">Measured on: {latestMeasurement.measurement_date ? new Date(latestMeasurement.measurement_date).toLocaleDateString() : "—"}</div>
-                <div className="pt-2">
-                  <button onClick={() => onNavigate ? onNavigate("measurements" as unknown as NavigationItem) : window.location.href = "/measurements"} className="px-3 py-1 rounded bg-gradient-to-r from-neon-green to-neon-blue text-white">View Measurements</button>
+
+                <div>
+                  <div className="text-xs text-muted-foreground">Today's Workout</div>
+                  <div className="mt-1 p-3 bg-white/5 rounded border">{renderPlanText(getTodayWorkoutText(activeAssignedPlan.plan) ?? "No workout specified for today.")}</div>
                 </div>
+
+
+                
               </div>
             ) : (
               <div className="space-y-2">
-                <div className="text-sm text-muted-foreground">No recent measurement found (last 14 days).</div>
-                <div className="text-sm">Please measure again to keep your records up-to-date.</div>
-                <div className="pt-2">
-                  <button onClick={handleAddMeasurement} className="px-3 py-1 rounded bg-gradient-to-r from-neon-green to-neon-blue text-white">Add Measurement</button>
-                </div>
+                <div className="text-sm text-muted-foreground">No assigned plan found.</div>
+                <div className="text-sm">Ask your trainer to assign a workout & diet plan to see daily guidance here.</div>
               </div>
             )}
           </CardContent>
@@ -784,56 +934,7 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
         </Card>
       </div>
 
-      {/* Payments & Notices (original) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card className="p-4">
-          <CardHeader>
-            <CardTitle className={`flex items-center gap-2 ${isTablet ? "text-base" : "text-lg"}`}>
-              <IconBubble className="bg-gradient-to-br from-emerald-100 to-green-50"> 
-                <AlertTriangle className="h-4 w-4" />
-              </IconBubble>
-              <span>Payments & Notices</span>
-            </CardTitle>
-            <CardDescription className={isTablet ? "text-xs" : ""}>Your latest invoices and alerts</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {dashboardData.notices && dashboardData.notices.length > 0 ? (
-                dashboardData.notices.slice(0, 4).map((n: any, idx: number) => (
-                  <div key={idx} className="flex items-center justify-between p-2 border rounded-md">
-                    <div>
-                      <div className="font-medium text-sm">{n.title}</div>
-                      <div className="text-xs text-muted-foreground">{n.summary}</div>
-                    </div>
-                    <div className="text-right text-xs text-muted-foreground">{new Date(n.ts).toLocaleDateString()}</div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-sm text-muted-foreground">No recent notices</div>
-              )}
-
-              <div className="pt-2 flex gap-2">
-                <button onClick={() => onNavigate && onNavigate("payments")} className="px-3 py-1 border rounded-md text-sm">View invoices</button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* a small placeholder card to keep layout balanced */}
-        <Card className="p-4">
-          <CardHeader>
-            <CardTitle className={`flex items-center gap-2 ${isTablet ? "text-base" : "text-lg"}`}>
-              <span>Quick Actions</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <button onClick={() => window.open(`tel:${dashboardData.trainer?.phone ?? ""}`)} className="px-3 py-1 border rounded-md text-sm">Call Trainer</button>
-              <div className="text-xs text-muted-foreground mt-2">Use the actions above to manage payments or profile.</div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      
 
       {/* ---------- Add Measurement Modal ---------- */}
       {isAddMeasurementOpen && (
