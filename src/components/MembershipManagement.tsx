@@ -1,5 +1,5 @@
 // src/pages/membership/MembershipManagement.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -54,7 +54,7 @@ interface Member {
   workout_batch?: string;
   gender?: 'Male' | 'Female';
   dob?: string;
-  age?: number; // <-- added age
+  age?: number; 
 }
 
 /* ---------- device hook: mobile / tablet / desktop ---------- */
@@ -145,6 +145,13 @@ export function MembershipManagement() {
   const [todayAttendanceMap, setTodayAttendanceMap] = useState<Record<string, any>>({});
   // processing flags for per-member attendance actions
   const [attendanceProcessing, setAttendanceProcessing] = useState<Record<string, boolean>>({});
+
+  // --- Bulk upload states (NEW) ---
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const [bulkResult, setBulkResult] = useState<{ success: any[]; failed: any[] } | null>(null);
+
+  // --- ref for bulk input (fixes button not opening file picker) ---
+  const bulkInputRef = useRef<HTMLInputElement | null>(null);
 
   // --- Helpers to normalize various response shapes ---
   const extractListFromResponse = (res: any): any[] => {
@@ -361,8 +368,83 @@ export function MembershipManagement() {
     }
   };
 
-  // Optional: allow manual create attendance if signIn/signOut endpoints aren't present
-  // but above functions use the service helpers you provided.
+  // --- Bulk Upload handler (NEW) ---
+  const handleBulkUpload = async (file: File | null) => {
+    if (!file) {
+      toast.error('Please select a file to upload');
+      return;
+    }
+
+    setBulkUploading(true);
+    setBulkResult(null);
+
+    try {
+      const res = await memberService.bulkUpload(file);
+      // expect { success: [...], failed: [...] }
+      const success = res?.success || [];
+      const failed = res?.failed || [];
+      setBulkResult({ success, failed });
+      toast.success(`Bulk upload finished succeeded`);
+
+      // refresh members and today's attendances so UI reflects new rows
+      await fetchMembers();
+      await fetchTodays();
+    } catch (err: any) {
+      console.error('Bulk upload failed', err);
+      toast.error(err?.message || 'Bulk upload failed');
+    } finally {
+      setBulkUploading(false);
+    }
+  };
+
+  // file input change wrapper
+  const onBulkFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    if (!file) return;
+    await handleBulkUpload(file);
+    // clear input so same file can be reselected if needed
+    e.currentTarget.value = '';
+  };
+
+  // download failed rows as CSV
+  const downloadFailedCSV = (failedRows: any[]) => {
+    if (!Array.isArray(failedRows) || failedRows.length === 0) {
+      toast.error('No failed rows to download');
+      return;
+    }
+
+    // build headers union
+    const headersSet = new Set<string>();
+    failedRows.forEach(r => {
+      if (r && typeof r === 'object') {
+        Object.keys(r).forEach(k => headersSet.add(k));
+      }
+    });
+    const headers = Array.from(headersSet);
+
+    const csvLines = [];
+    csvLines.push(headers.join(','));
+    failedRows.forEach((row) => {
+      const line = headers.map(h => {
+        let cell = row[h];
+        if (cell === null || typeof cell === 'undefined') return '';
+        if (typeof cell === 'object') cell = JSON.stringify(cell);
+        // escape quotes and commas
+        const cellStr = String(cell).replace(/"/g, '""');
+        // wrap in quotes if contains comma or newline
+        return (/,|\n/.test(cellStr) ? `"${cellStr}"` : cellStr);
+      }).join(',');
+      csvLines.push(line);
+    });
+
+    const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bulk-upload-failed-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   // --- Add member ---
   const handleAddMember = async () => {
@@ -927,89 +1009,140 @@ export function MembershipManagement() {
           <p className={`${subtitleClass}`}>Manage gym members, plans, and renewals</p>
         </div>
 
-        {/* Add member */}
-        <Dialog open={isAddMemberOpen} onOpenChange={setIsAddMemberOpen}>
-          <DialogTrigger asChild>
-            <Button className={`bg-gradient-to-r from-neon-green to-neon-blue text-white ${isTablet ? 'px-3 py-1 text-sm' : 'px-4 py-2'}`}>
-              <Plus className={`${iconClass} mr-2`} />
-              <span className="hidden sm:inline">{isTablet ? 'Add Member' : 'Add New Member'}</span>
-              <span className="sm:hidden">Add</span>
+        {/* Add member + Bulk Upload */}
+        <div className="flex items-center gap-2">
+          <Dialog open={isAddMemberOpen} onOpenChange={setIsAddMemberOpen}>
+            <DialogTrigger asChild>
+              <Button className={`bg-gradient-to-r from-neon-green to-neon-blue text-white ${isTablet ? 'px-3 py-1 text-sm' : 'px-4 py-2'}`}>
+                <Plus className={`${iconClass} mr-2`} />
+                <span className="hidden sm:inline">{isTablet ? 'Add Member' : 'Add New Member'}</span>
+                <span className="sm:hidden">Add</span>
+              </Button>
+            </DialogTrigger>
+
+            <DialogContent className={`${dialogMaxW} w-[95vw] max-h-[90vh] overflow-y-auto mx-4 sm:mx-0`}>
+              <DialogHeader className={`${dialogPadding}`}>
+                <DialogTitle className={`${isTablet ? 'text-lg' : 'text-xl'}`}>Add New Member</DialogTitle>
+              </DialogHeader>
+              <div className={`grid gap-2 sm:gap-3 ${isTablet ? 'py-2 px-1' : 'py-3 px-1 sm:px-0'}`}>
+                <div className="grid gap-2">
+                  <Label htmlFor="photo" className={`${smallText}`}>Member Photo</Label>
+                  <Input
+                    id="photo"
+                    type="file"
+                    accept="image/*"
+                    capture="user"
+                    onChange={async (e: any) => {
+                      const file = e.target.files?.[0] || null;
+                      if (!file) return;
+                      await uploadAndSetPhoto(file);
+                    }}
+                    className={`cursor-pointer ${isTablet ? 'text-xs' : 'text-sm'}`}
+                    disabled={imageUploading}
+                  />
+                  {imageUploading ? <div className="text-xs text-muted-foreground">Uploading image...</div> : null}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
+                  <div className="grid gap-2 sm:col-span-2">
+                    <Label className={`${smallText}`}>Full Name</Label>
+                    <Input value={newMember.name} onChange={(e) => setNewMember({...newMember, name: e.target.value})} />
+                  </div>
+                  <div>
+                    <Label className={`${smallText}`}>Email</Label>
+                    <Input type="email" value={newMember.email} onChange={(e) => setNewMember({...newMember, email: e.target.value})} />
+                  </div>
+                  <div>
+                    <Label className={`${smallText}`}>Phone</Label>
+                    <Input value={newMember.phone} onChange={(e) => setNewMember({...newMember, phone: e.target.value})} />
+                  </div>
+
+                  {/* DOB field added */}
+                  <div>
+                    <Label className={`${smallText}`}>Date of Birth</Label>
+                    <Input type="date" value={newMember.dob} onChange={(e) => setNewMember({...newMember, dob: e.target.value})} />
+                  </div>
+
+                  {/* Measurement fields added */}
+                  <div>
+                    <Label className={`${smallText}`}>Height (cm)</Label>
+                    <Input type="number" value={newMember.height} onChange={(e) => setNewMember({...newMember, height: e.target.value})} />
+                  </div>
+                  <div>
+                    <Label className={`${smallText}`}>Weight (kg)</Label>
+                    <Input type="number" value={newMember.weight} onChange={(e) => setNewMember({...newMember, weight: e.target.value})} />
+                  </div>
+
+                  <div>
+                    <Label className={`${smallText}`}>Measurement Date</Label>
+                    <Input type="date" value={newMember.measurementDate} onChange={(e) => setNewMember({...newMember, measurementDate: e.target.value})} />
+                  </div>
+                </div>
+
+                <div>
+                  <Label className={`${smallText}`}>Start Date</Label>
+                  <Input type="date" value={newMember.startDate} onChange={(e) => setNewMember({...newMember, startDate: e.target.value})} />
+                </div>
+              </div>
+
+              <DialogFooter className={`flex flex-col sm:flex-row gap-2 sm:gap-0 ${dialogPadding}`}>
+                <Button onClick={handleAddMember} className={`${isTablet ? 'w-full sm:w-auto px-3 py-1 text-sm' : 'w-full sm:w-auto px-4 py-2'} bg-gradient-to-r from-neon-green to-neon-blue text-white`} disabled={loading || imageUploading}>
+                  {loading ? 'Saving...' : 'Add Member'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Bulk upload input/button */}
+          <>
+            <input
+              ref={bulkInputRef}
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              onChange={onBulkFileChange}
+              style={{ display: 'none' }}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              className={`${isTablet ? 'px-2 py-1 text-sm' : ''} border`}
+              disabled={bulkUploading}
+              onClick={() => bulkInputRef.current?.click()}
+            >
+              {bulkUploading ? 'Uploading...' : 'Bulk Upload'}
             </Button>
-          </DialogTrigger>
+          </>
+        </div>
+      </div>
 
-          <DialogContent className={`${dialogMaxW} w-[95vw] max-h-[90vh] overflow-y-auto mx-4 sm:mx-0`}>
-            <DialogHeader className={`${dialogPadding}`}>
-              <DialogTitle className={`${isTablet ? 'text-lg' : 'text-xl'}`}>Add New Member</DialogTitle>
-            </DialogHeader>
-            <div className={`grid gap-2 sm:gap-3 ${isTablet ? 'py-2 px-1' : 'py-3 px-1 sm:px-0'}`}>
-              <div className="grid gap-2">
-                <Label htmlFor="photo" className={`${smallText}`}>Member Photo</Label>
-                <Input
-                  id="photo"
-                  type="file"
-                  accept="image/*"
-                  capture="user"
-                  onChange={async (e: any) => {
-                    const file = e.target.files?.[0] || null;
-                    if (!file) return;
-                    await uploadAndSetPhoto(file);
-                  }}
-                  className={`cursor-pointer ${isTablet ? 'text-xs' : 'text-sm'}`}
-                  disabled={imageUploading}
-                />
-                {imageUploading ? <div className="text-xs text-muted-foreground">Uploading image...</div> : null}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
-                <div className="grid gap-2 sm:col-span-2">
-                  <Label className={`${smallText}`}>Full Name</Label>
-                  <Input value={newMember.name} onChange={(e) => setNewMember({...newMember, name: e.target.value})} />
-                </div>
-                <div>
-                  <Label className={`${smallText}`}>Email</Label>
-                  <Input type="email" value={newMember.email} onChange={(e) => setNewMember({...newMember, email: e.target.value})} />
-                </div>
-                <div>
-                  <Label className={`${smallText}`}>Phone</Label>
-                  <Input value={newMember.phone} onChange={(e) => setNewMember({...newMember, phone: e.target.value})} />
-                </div>
-
-                {/* DOB field added */}
-                <div>
-                  <Label className={`${smallText}`}>Date of Birth</Label>
-                  <Input type="date" value={newMember.dob} onChange={(e) => setNewMember({...newMember, dob: e.target.value})} />
-                </div>
-
-                {/* Measurement fields added */}
-                <div>
-                  <Label className={`${smallText}`}>Height (cm)</Label>
-                  <Input type="number" value={newMember.height} onChange={(e) => setNewMember({...newMember, height: e.target.value})} />
-                </div>
-                <div>
-                  <Label className={`${smallText}`}>Weight (kg)</Label>
-                  <Input type="number" value={newMember.weight} onChange={(e) => setNewMember({...newMember, weight: e.target.value})} />
-                </div>
-
-                <div>
-                  <Label className={`${smallText}`}>Measurement Date</Label>
-                  <Input type="date" value={newMember.measurementDate} onChange={(e) => setNewMember({...newMember, measurementDate: e.target.value})} />
-                </div>
-              </div>
-
+      {/* show bulk upload result summary if present */}
+      {bulkResult && (
+        <Card className="border-border/50">
+          <CardContent className={cardPadding}>
+            <div className="flex items-center justify-between">
               <div>
-                <Label className={`${smallText}`}>Start Date</Label>
-                <Input type="date" value={newMember.startDate} onChange={(e) => setNewMember({...newMember, startDate: e.target.value})} />
+                <div className="font-medium">Bulk Upload Result</div>
+                <div className="text-sm text-muted-foreground">
+                  Success: {bulkResult.success.length} • Failed: {bulkResult.failed.length}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                {bulkResult.failed.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => downloadFailedCSV(bulkResult.failed)}
+                    className={`${isTablet ? 'px-2 py-1 text-sm' : ''}`}
+                  >
+                    Download Failed CSV
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" onClick={() => setBulkResult(null)}>Dismiss</Button>
               </div>
             </div>
-
-            <DialogFooter className={`flex flex-col sm:flex-row gap-2 sm:gap-0 ${dialogPadding}`}>
-              <Button onClick={handleAddMember} className={`${isTablet ? 'w-full sm:w-auto px-3 py-1 text-sm' : 'w-full sm:w-auto px-4 py-2'} bg-gradient-to-r from-neon-green to-neon-blue text-white`} disabled={loading || imageUploading}>
-                {loading ? 'Saving...' : 'Add Member'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Profile dialog */}
       <Dialog open={isProfileOpen} onOpenChange={setIsProfileOpen}>

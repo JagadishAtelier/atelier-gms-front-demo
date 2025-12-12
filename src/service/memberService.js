@@ -26,6 +26,28 @@ const memberService = {
   },
 
   /**
+ * ✅ Bulk Upload Members (CSV / Excel)
+ */
+async bulkUpload(file) {
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const res = await axios.post(`${API_URL}/member-bulk-upload`, formData, {
+      headers: {
+        ...buildHeaders(),
+        "Content-Type": "multipart/form-data",
+      },
+    });
+
+    return res.data; // { success: [...], failed: [...] }
+  } catch (err) {
+    throw err.response?.data || err;
+  }
+},
+
+
+  /**
    * ✅ Get All Members (with filters, pagination, search)
    */
   async getMembers(options = {}) {
