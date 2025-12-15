@@ -20,6 +20,7 @@ import {
   Moon,
   Settings as SettingsIcon,
   Rocket,
+  ShoppingBag,
 } from "lucide-react";
 import gymService from "../service/gymService.js";
 import { toast } from "sonner";
@@ -42,6 +43,7 @@ const navigationItems = [
   { id: "members" as NavigationItem, label: "Members", icon: Users },
   { id: "invoices" as NavigationItem, label: "Invoices", icon: FileText },
   { id: "plans" as NavigationItem, label: "Plans", icon: Clipboard },
+  { id: "product" as NavigationItem, label: "Product", icon: ShoppingBag },
   { id: "membership" as NavigationItem, label: "Membership", icon: Rocket },
   { id: "communication" as NavigationItem, label: "Messages", icon: MessageSquare },
   { id: "settings" as NavigationItem, label: "Settings", icon: SettingsIcon },
@@ -153,7 +155,7 @@ export function Layout({
       return navigationItems.filter((it) => allowed.has(it.id));
     }
     if (roleNorm === "super admin") {
-      const allowed = new Set(["dashboard", "members", "invoices", "plans", "membership", "settings"]);
+      const allowed = new Set(["dashboard", "members", "invoices", "plans","product", "membership", "settings"]);
       return navigationItems.filter((it) => allowed.has(it.id));
     }
     // Super Admin or any other role - show full menu

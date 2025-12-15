@@ -15,6 +15,7 @@ import authService from "./service/authService.js";
 import MemberWorkoutPlans from "./components/MemberWorkoutPlans";
 import  MemberRenewal  from "./components/MemberRenewal";
 import ResetPassword from "./components/ResetPassword";
+import ProductManagement from "./components/ProductManagement.js";
 
 export type NavigationItem =
   | "dashboard"
@@ -25,6 +26,7 @@ export type NavigationItem =
   | "members"
   | "invoices"
   | "plans"
+  | "product"
   | "membership"
   | "reports"
   | "communication"
@@ -87,6 +89,8 @@ export default function App() {
         return <InvoiceManagement />;
       case "plans":
         return <WorkoutPlans />;
+      case "product":
+        return <ProductManagement />;
       case "membership":
         return <Membership />;
       case "reports":
