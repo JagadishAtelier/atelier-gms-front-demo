@@ -1,5 +1,5 @@
 // src/components/MemberDashboard.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { NavigationItem } from "../App";
 import {
   Card,
@@ -26,6 +26,10 @@ import memberService from "../service/memberService.js"; // uses getMembersbyEma
 import membermeasurementService from "../service/membermeasurementService.js"; // new: measurements
 import memberdashboardService from "../service/memberdashboardService.js"; // <-- new service
 import assignplanService from "../service/assignplanService.js"; // <-- newly added
+
+// ------------------- NEW: productService import -------------------
+import productService from "../service/productService.js";
+// ------------------------------------------------------------------
 
 /* ---------- Types ---------- */
 interface Member {
@@ -241,6 +245,11 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
   const [editState, setEditState] = useState<Partial<Member> | null>(null);
   const { isMobile, isTablet } = useDevice();
 
+  // ------------------- NEW: products state -------------------
+  const [products, setProducts] = useState<any[]>([]);
+  const [productsLoading, setProductsLoading] = useState<boolean>(false);
+  // --------------------------------------------------------
+
   // measurement state
   const [latestMeasurement, setLatestMeasurement] = useState<null | {
     id: string;
@@ -318,6 +327,39 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
     return [];
   };
 
+  // ------------------- NEW: fetch products using productService -------------------
+  useEffect(() => {
+    let mounted = true;
+    const fetchProducts = async () => {
+      setProductsLoading(true);
+      try {
+        const res = await productService.getProducts({ page: 1, limit: 12 });
+        const list = normalizeListFromResponse(res);
+        // map to a safe shape
+        const mapped = list.map((p: any) => ({
+          id: p.id,
+          title: p.title ?? p.name ?? "Untitled",
+          price: typeof p.price === "number" ? Number(p.price) : (p.price ? Number(String(p.price).replace(/[^\d.]/g, "")) : 0),
+          priceLabel: typeof p.price === "number" ? `₹${Number(p.price).toFixed(2)}` : (p.price ?? "—"),
+          image: p.product_image_url ?? p.image_url ?? p.image ?? null,
+          description: p.description ?? p.desc ?? null,
+        }));
+        if (mounted) setProducts(mapped);
+      } catch (err: any) {
+        console.error("Failed to load products", err);
+        toast.error(err?.message || "Failed to load products");
+      } finally {
+        if (mounted) setProductsLoading(false);
+      }
+    };
+
+    fetchProducts();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+  // -------------------------------------------------------------------------------
+
   // fetch member info (USE ONLY memberService.getMembersbyEmail WITHOUT SENDING EMAIL)
   useEffect(() => {
     let mounted = true;
@@ -373,7 +415,7 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
       setAssignedPlanLoading(true);
       try {
         const res = await assignplanService.getAssignedPlanBymemberId();
-        // Normalize response (could be { status, data: [...] } or array)
+        // Normalize response (could be { status, data, rows } or array)
         const list = normalizeListFromResponse(res);
         const plans: AssignedPlan[] = list.map((it: any) => (it.data ? it.data : it));
         if (mounted) {
@@ -643,6 +685,122 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
     return undefined;
   };
 
+  // ------------------- NEW: ProductsCarousel component -------------------
+  function ProductsCarousel({ items }: { items: any[] }) {
+    const containerRef = useRef<HTMLDivElement | null>(null);
+
+    const scrollBy = (dir: "left" | "right") => {
+      const el = containerRef.current;
+      if (!el) return;
+      const scrollAmount = Math.round(el.clientWidth * 0.85);
+      el.scrollBy({ left: dir === "left" ? -scrollAmount : scrollAmount, behavior: "smooth" });
+    };
+
+    // keyboard navigation
+    useEffect(() => {
+      const el = containerRef.current;
+      if (!el) return;
+      const handler = (e: KeyboardEvent) => {
+        if (e.key === "ArrowRight") scrollBy("right");
+        if (e.key === "ArrowLeft") scrollBy("left");
+      };
+      window.addEventListener("keydown", handler);
+      return () => window.removeEventListener("keydown", handler);
+    }, []);
+
+    if (!items || items.length === 0) {
+      return <div className="text-sm text-muted-foreground">No products available.</div>;
+    }
+
+    // ------------------- NEW: sendWhatsApp helper -------------------
+    const sendWhatsApp = (p: any) => {
+      try {
+        // WhatsApp phone number (India): +91 94872 80241 => phone param should be country code + number without '+'
+        const phone = "919487280241";
+        // Build message — include member details if available
+        const memberName = (member && member.name) ? member.name : "Customer";
+        const memberPhone = (member && member.phone) ? ` (${member.phone})` : "";
+        const productTitle = p?.title ?? "Product";
+        const productId = p?.id ?? "";
+        const productPrice = p?.priceLabel ?? (p?.price ? `₹${p.price}` : "—");
+
+        const text = `Hello,%0AI'm ${memberName}${memberPhone}.%0AI am interested in *${productTitle}*%0AProduct ID: ${productId}%0APrice: ${productPrice}%0AKindly contact me.`;
+        const url = `https://wa.me/${phone}?text=${text}`;
+
+        // open WhatsApp in new tab (web or app on mobile)
+        window.open(url, "_blank");
+      } catch (err) {
+        console.error("Failed to open WhatsApp:", err);
+        toast.error("Unable to open WhatsApp");
+      }
+    };
+    // ---------------------------------------------------------------------
+
+    return (
+      <div className="relative">
+        <button
+          aria-label="Previous products"
+          onClick={() => scrollBy("left")}
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-20 rounded-full bg-white/6 p-2 shadow"
+        >
+          ‹
+        </button>
+
+        <div
+          ref={containerRef}
+          className="overflow-x-auto no-scrollbar flex gap-4 py-2 px-6 scroll-smooth"
+          style={{ scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}
+        >
+          {items.map((p) => (
+            <div
+              key={p.id}
+              className="min-w-[220px] max-w-[220px] flex-shrink-0 rounded-lg border bg-white p-3 shadow-sm"
+              style={{ scrollSnapAlign: "start" }}
+            >
+              <div className="w-full h-36 overflow-hidden rounded-md bg-gray-100 flex items-center justify-center">
+                <img
+                  src={p.image || "https://via.placeholder.com/360x240?text=No+Image"}
+                  alt={p.title}
+                  className="object-cover w-full h-full"
+                />
+              </div>
+              <div className="mt-3">
+                <h4 className="font-semibold text-sm">{p.title}</h4>
+                <div className="mt-1 flex items-center justify-between">
+                  <div className="text-sm font-bold text-red-600">{p.priceLabel ?? (p.price ? `₹${p.price}` : "—")}</div>
+                  <div className="text-xs text-muted-foreground">In stock</div>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground line-clamp-2">{p.description ?? ""}</p>
+
+                <div className="mt-3 flex gap-2">
+                  
+                  <button
+                    onClick={() => {
+                      // OPEN WHATSAPP with prefilled message to +91 94872 80241
+                      sendWhatsApp(p);
+                    }}
+                    className="rounded-md bg-gradient-to-r from-neon-green to-neon-blue px-3 py-1 text-sm text-white"
+                  >
+                    Buy
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <button
+          aria-label="Next products"
+          onClick={() => scrollBy("right")}
+          className="absolute right-0 top-1/2 -translate-y-1/2 z-20 rounded-full bg-white/6 p-2 shadow"
+        >
+          ›
+        </button>
+      </div>
+    );
+  }
+  // ---------------------------------------------------------------------
+
   if (loading) return <div className="flex justify-center items-center h-80 text-lg font-medium text-muted-foreground">Loading your dashboard...</div>;
   if (!dashboardData) return <div className="flex justify-center items-center h-80 text-lg text-muted-foreground">No data found</div>;
 
@@ -853,6 +1011,25 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
         </Card>
       </div>
 
+      {/* ---------- NEW: Featured Products Carousel ---------- */}
+      <div className="mt-4">
+        <Card className="p-4">
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span>Featured Products</span>
+              <div className="text-sm text-muted-foreground">{productsLoading ? "Loading..." : `${products.length} items`}</div>
+            </CardTitle>
+            <CardDescription>Products you might be interested in — swipe or use arrows to navigate.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="mt-2">
+              <ProductsCarousel items={products} />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+      {/* ------------------------------------------------------------------ */}
+
       {/* Measurement card: show latest measurement if within 14 days, else prompt to add */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="p-4">
@@ -933,8 +1110,6 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
           </CardContent>
         </Card>
       </div>
-
-      
 
       {/* ---------- Add Measurement Modal ---------- */}
       {isAddMeasurementOpen && (
