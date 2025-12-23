@@ -16,6 +16,7 @@ import MemberWorkoutPlans from "./components/MemberWorkoutPlans";
 import  MemberRenewal  from "./components/MemberRenewal";
 import ResetPassword from "./components/ResetPassword";
 import ProductManagement from "./components/ProductManagement.js";
+import PWAInstallBanner from "./components/PWAInstallBanner.js";
 
 export type NavigationItem =
   | "dashboard"
@@ -118,6 +119,7 @@ export default function App() {
       {!isAuthenticated ? (
         <Login onLogin={handleLogin} />
       ) : (
+        <>
         <Layout
           currentPage={currentPage}
           onNavigate={setCurrentPage}
@@ -127,7 +129,10 @@ export default function App() {
         >
           {renderCurrentPage()}
         </Layout>
+        </>
       )}
+      
+        <PWAInstallBanner />
     </div>
   );
 }
