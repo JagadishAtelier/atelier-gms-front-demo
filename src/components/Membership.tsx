@@ -43,7 +43,7 @@ import membershipService from "../service/membershipService.js";
 interface Membership {
   id: string;
   name: string;
-  price: string;
+  price: string | number;
   duration_months: number;
   description: string;
   is_active: boolean;
@@ -54,23 +54,29 @@ interface Membership {
 export function Membership() {
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // modal open
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+
+  // editingId -> if null => create mode, else edit mode
+  const [editingId, setEditingId] = useState<string | null>(null);
+
   const [activeTab, setActiveTab] = useState("all");
-  const [newMembership, setNewMembership] = useState({
+
+  // form state (strings for inputs)
+  const [form, setForm] = useState({
     name: "",
     price: "",
     duration_months: "",
     description: "",
   });
 
-  // 🧠 Fetch memberships (extracted so it can be reused)
+  // fetch memberships
   const fetchMemberships = async () => {
     setLoading(true);
     try {
       const response = await membershipService.getMemberships();
-      // try common response shapes safely
       const list = response?.data?.data ?? response?.data ?? response ?? [];
-      // ensure array
       const arr = Array.isArray(list) ? list : [];
       setMemberships(arr);
     } catch (err: any) {
@@ -80,48 +86,85 @@ export function Membership() {
     }
   };
 
-  // initial load
   useEffect(() => {
     fetchMemberships();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ➕ Create membership
-  const handleCreate = async () => {
-    if (!newMembership.name || !newMembership.price) {
+  // open modal for create
+  const openCreate = () => {
+    setEditingId(null);
+    setForm({ name: "", price: "", duration_months: "", description: "" });
+    setIsCreateOpen(true);
+  };
+
+  // open modal for edit and populate form
+  const openEdit = (m: Membership) => {
+    setEditingId(m.id);
+    setForm({
+      name: m.name ?? "",
+      price: String(m.price ?? ""),
+      duration_months: String(m.duration_months ?? ""),
+      description: m.description ?? "",
+    });
+    setIsCreateOpen(true);
+  };
+
+  // when modal closed by outside click / cancel, reset edit state
+  const handleModalOpenChange = (open: boolean) => {
+    if (!open) {
+      // reset
+      setEditingId(null);
+      setForm({ name: "", price: "", duration_months: "", description: "" });
+    }
+    setIsCreateOpen(open);
+  };
+
+  // create or update handler
+  const handleSave = async () => {
+    // basic validation
+    if (!form.name?.trim() || !form.price?.trim()) {
       toast.error("Please fill all required fields");
       return;
     }
 
     try {
       setLoading(true);
-      const payload = {
-        name: newMembership.name,
-        price: parseFloat(newMembership.price),
-        duration_months: parseInt(newMembership.duration_months) || 1,
-        description: newMembership.description,
-      };
-      // create on backend
-      await membershipService.createMembership(payload);
 
-      // REFRESH: re-fetch memberships to reflect canonical server state
+      const payload = {
+        name: form.name.trim(),
+        price: parseFloat(form.price as unknown as string),
+        duration_months: parseInt(form.duration_months || "1", 10) || 1,
+        description: form.description?.trim() || "",
+      };
+
+      if (editingId) {
+        // Update flow
+        await membershipService.updateMembership(editingId, payload);
+        toast.success("Membership updated successfully!");
+      } else {
+        // Create flow
+        await membershipService.createMembership(payload);
+        toast.success("Membership created successfully!");
+      }
+
+      // refresh canonical data from server
       await fetchMemberships();
 
-      toast.success("Membership created successfully!");
-      setNewMembership({ name: "", price: "", duration_months: "", description: "" });
+      // reset modal & form
+      setEditingId(null);
+      setForm({ name: "", price: "", duration_months: "", description: "" });
       setIsCreateOpen(false);
     } catch (err: any) {
-      toast.error(err?.message || "Failed to create membership");
+      toast.error(err?.message || (editingId ? "Failed to update membership" : "Failed to create membership"));
     } finally {
       setLoading(false);
     }
   };
 
-  // 🗑️ Delete membership
   const handleDelete = async (id: string) => {
     try {
       await membershipService.deleteMembership(id);
-      // refresh list after delete
       await fetchMemberships();
       toast.success("Membership deleted!");
     } catch (err: any) {
@@ -129,11 +172,9 @@ export function Membership() {
     }
   };
 
-  // ♻️ Restore membership (shown instead of Delete when is_active === false)
   const handleRestore = async (id: string) => {
     try {
       await membershipService.restoreMembership(id);
-      // refresh list after restore
       await fetchMemberships();
       toast.success("Membership restored!");
     } catch (err: any) {
@@ -141,7 +182,6 @@ export function Membership() {
     }
   };
 
-  // 🔍 Filtered memberships
   const filteredMemberships = memberships.filter((m) => {
     if (activeTab === "all") return true;
     return activeTab === "active" ? m.is_active : !m.is_active;
@@ -164,79 +204,74 @@ export function Membership() {
           </p>
         </div>
 
-        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        <Dialog open={isCreateOpen} onOpenChange={handleModalOpenChange}>
           <DialogTrigger asChild>
-            <Button className="bg-gradient-to-r from-neon-green to-neon-blue text-white">
+            <Button
+              className="bg-gradient-to-r from-neon-green to-neon-blue text-white"
+              onClick={openCreate}
+            >
               <Plus className="w-4 h-4 mr-2" />
               Create New Plan
             </Button>
           </DialogTrigger>
+
           <DialogContent className="sm:max-w-[500px]">
             <DialogHeader>
-              <DialogTitle>Create Membership Plan</DialogTitle>
+              <DialogTitle>{editingId ? "Edit Membership Plan" : "Create Membership Plan"}</DialogTitle>
               <DialogDescription>
-                Add a new membership type with price and duration.
+                {editingId ? "Update the plan details and save." : "Add a new membership type with price and duration."}
               </DialogDescription>
             </DialogHeader>
+
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
                 <Label>Name</Label>
                 <Input
                   placeholder="Gold Membership"
-                  value={newMembership.name}
-                  onChange={(e) =>
-                    setNewMembership({ ...newMembership, name: e.target.value })
-                  }
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
                 />
               </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label>Price (₹)</Label>
                   <Input
                     type="number"
                     placeholder="1000"
-                    value={newMembership.price}
-                    onChange={(e) =>
-                      setNewMembership({ ...newMembership, price: e.target.value })
-                    }
+                    value={form.price}
+                    onChange={(e) => setForm({ ...form, price: e.target.value })}
                   />
                 </div>
+
                 <div className="grid gap-2">
                   <Label>Duration (Months)</Label>
                   <Input
                     type="number"
                     placeholder="3"
-                    value={newMembership.duration_months}
-                    onChange={(e) =>
-                      setNewMembership({
-                        ...newMembership,
-                        duration_months: e.target.value,
-                      })
-                    }
+                    value={form.duration_months}
+                    onChange={(e) => setForm({ ...form, duration_months: e.target.value })}
                   />
                 </div>
               </div>
+
               <div className="grid gap-2">
                 <Label>Description</Label>
                 <Textarea
                   placeholder="Describe this membership plan..."
-                  value={newMembership.description}
-                  onChange={(e) =>
-                    setNewMembership({
-                      ...newMembership,
-                      description: e.target.value,
-                    })
-                  }
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
                 />
               </div>
             </div>
+
             <DialogFooter>
               <Button
-                onClick={handleCreate}
+                onClick={handleSave}
                 className="bg-gradient-to-r from-neon-green to-neon-blue text-white"
                 disabled={loading}
               >
-                {loading ? "Creating..." : "Create Plan"}
+                {loading ? (editingId ? "Updating..." : "Saving...") : (editingId ? "Update Plan" : "Create Plan")}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -290,17 +325,24 @@ export function Membership() {
                       ₹{plan.price} / {plan.duration_months} month
                       {plan.duration_months > 1 ? "s" : ""}
                     </div>
+
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <Clock className="w-4 h-4" />
                       Created {new Date(plan.createdAt).toLocaleDateString()}
                     </div>
+
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <User className="w-4 h-4" />
                       Added by {plan.created_by_name || "Admin"}
                     </div>
 
                     <div className="flex gap-2 pt-3 border-t border-border">
-                      <Button variant="outline" size="sm" className="flex-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => openEdit(plan)}
+                      >
                         <Pencil className="w-4 h-4 mr-1" /> Edit
                       </Button>
 

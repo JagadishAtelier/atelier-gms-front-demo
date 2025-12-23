@@ -22,10 +22,10 @@ import {
   Legend,
 } from "recharts";
 import { motion } from "framer-motion";
-import memberService from "../service/memberService.js"; // uses getMembersbyEmail()
-import membermeasurementService from "../service/membermeasurementService.js"; // new: measurements
-import memberdashboardService from "../service/memberdashboardService.js"; // <-- new service
-import assignplanService from "../service/assignplanService.js"; // <-- newly added
+import memberService from "../service/memberService.js";
+import membermeasurementService from "../service/membermeasurementService.js";
+import memberdashboardService from "../service/memberdashboardService.js";
+import assignplanService from "../service/assignplanService.js";
 
 // ------------------- NEW: productService import -------------------
 import productService from "../service/productService.js";
@@ -63,7 +63,6 @@ interface Plan {
   friday_plan?: string;
   saturday_plan?: string;
   sunday_plan?: string;
-  // possible diet fields -- optional
   diet_plan?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -84,7 +83,7 @@ interface AssignedPlan {
 
 interface MemberDashboardProps {
   onNavigate?: (page: NavigationItem) => void;
-  memberId?: string; // kept for compatibility but not used to send email
+  memberId?: string;
 }
 
 /* ---------- small device hook ---------- */
@@ -201,7 +200,6 @@ function SpeedometerGauge({ value, max, size = 160, arcColor = "#3b82f6", trackC
 }
 
 /* ----------------- Dummy dashboard data (keeps original dashboard feel) -----------------*/
-// kept as fallback if API call fails
 const dummyData: any = (() => {
   const now = Date.now();
   return {
@@ -241,7 +239,7 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
   const [isUpdating, setIsUpdating] = useState(false);
 
   const [member, setMember] = useState<Member | null>(null);
-  const [profileOpen, setProfileOpen] = useState(false); // edit modal toggle
+  const [profileOpen, setProfileOpen] = useState(false);
   const [editState, setEditState] = useState<Partial<Member> | null>(null);
   const { isMobile, isTablet } = useDevice();
 
@@ -285,11 +283,8 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
     async function loadDashboard() {
       try {
         const resp = await memberdashboardService.getMemberDashboard();
-        // resp might be: { status, message, data: {...} } or { data: {...} } or {...}
         const payload =
           resp?.data && typeof resp.data === "object" ? resp.data : (resp && typeof resp === "object" && resp.status ? resp.data || resp : resp);
-
-        // prefer payload if object, else fallback to dummy
         const final = payload && Object.keys(payload).length > 0 ? payload : dummyData;
 
         if (mounted) {
@@ -300,7 +295,6 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
       } catch (err: any) {
         console.error("Failed to load dashboard from API", err);
         if (mounted) {
-          // fallback to dummy data so UI still works
           setDashboardData(dummyData);
           setLoading(false);
           setIsUpdating(false);
@@ -335,7 +329,6 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
       try {
         const res = await productService.getProducts({ page: 1, limit: 12 });
         const list = normalizeListFromResponse(res);
-        // map to a safe shape
         const mapped = list.map((p: any) => ({
           id: p.id,
           title: p.title ?? p.name ?? "Untitled",
@@ -365,15 +358,11 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
     let mounted = true;
     async function fetchMemberByEmail() {
       try {
-        // Call backend endpoint that will determine the email from the token
-        const res = await memberService.getMembersbyEmail(); // no params — backend reads token
-        // If backend returns a single object under res.data (member), use it.
+        const res = await memberService.getMembersbyEmail();
         if (res && res.data && !Array.isArray(res.data) && res.data.id) {
           if (mounted) setMember(res.data);
           return;
         }
-
-        // Otherwise try to normalize as list and take first item
         const list = normalizeListFromResponse(res);
         if (Array.isArray(list) && list.length > 0) {
           const first = list[0];
@@ -381,8 +370,6 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
           if (mounted) setMember(received);
           return;
         }
-
-        // No member found
         if (mounted) {
           setMember(null);
           toast.error("No member found for current user");
@@ -400,7 +387,7 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
     return () => {
       mounted = false;
     };
-  }, []); // run once on mount
+  }, []);
 
   // fetch assigned plan(s) for the current member (backend reads token / member)
   useEffect(() => {
@@ -415,13 +402,10 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
       setAssignedPlanLoading(true);
       try {
         const res = await assignplanService.getAssignedPlanBymemberId();
-        // Normalize response (could be { status, data, rows } or array)
         const list = normalizeListFromResponse(res);
         const plans: AssignedPlan[] = list.map((it: any) => (it.data ? it.data : it));
         if (mounted) {
           setAssignedPlans(plans);
-
-          // pick the most recent active assigned plan (by assigned_date or createdAt)
           const sorted = plans
             .filter(p => p)
             .sort((a: any, b: any) => {
@@ -472,7 +456,6 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
           return;
         }
 
-        // Some backends return objects with measurement_date, or nested fields — normalize
         const normalized = list
           .map((it: any) => {
             const dateRaw = it.measurement_date ?? it.date ?? it.createdAt ?? it.created_at ?? null;
@@ -494,7 +477,6 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
           return;
         }
 
-        // sort by date desc
         normalized.sort((a: any, b: any) => new Date(b.measurement_date!).getTime() - new Date(a.measurement_date!).getTime());
         const latest = normalized[0];
         if (mounted) {
@@ -504,8 +486,6 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
             weight: latest.weight,
             measurement_date: latest.measurement_date,
           });
-
-          // check freshness: within last 14 days
           const msSince = Date.now() - new Date(latest.measurement_date!).getTime();
           const days = msSince / (1000 * 60 * 60 * 24);
           setMeasurementFresh(days <= 14);
@@ -567,7 +547,6 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        // try to parse error message
         let msg = `Error ${res.status}`;
         try {
           const j = await res.json();
@@ -582,7 +561,6 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
       toast.success("Profile updated");
     } catch (err: any) {
       console.error("Failed to save profile", err);
-      // update locally anyway (optimistic)
       setMember(prev => ({ ...(prev as Member), ...payload }));
       setProfileOpen(false);
       toast.error("Failed to save to server, saved locally");
@@ -595,7 +573,6 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
       toast.error("No member selected to add measurement for.");
       return;
     }
-    // initialize measurement date to today
     const d = new Date();
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -612,13 +589,11 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
       return;
     }
 
-    // validation: measurement_date required
     if (!measureForm.measurement_date) {
       toast.error("Measurement date is required");
       return;
     }
 
-    // parse numbers if provided
     const payload: any = {
       member_id: member.id,
       measurement_date: new Date(measureForm.measurement_date).toISOString(),
@@ -645,7 +620,6 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
     try {
       setMeasureSubmitting(true);
       const res = await membermeasurementService.createMemberMeasurement(payload);
-      // normalize created record (service returns res.data or object)
       const created = res?.data ? res.data : res;
 
       const createdObj = {
@@ -655,7 +629,6 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
         measurement_date: created.measurement_date ?? created.date ?? created.createdAt ?? created.created_at ?? payload.measurement_date,
       };
 
-      // update local latestMeasurement & freshness
       setLatestMeasurement({
         id: createdObj.id,
         height: createdObj.height,
@@ -676,7 +649,6 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
     }
   };
 
-  // small helper to try to extract id from different shapes
   const createdIdFrom = (res: any) => {
     if (!res) return undefined;
     if (typeof res === "string") return res;
@@ -685,7 +657,7 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
     return undefined;
   };
 
-  // ------------------- NEW: ProductsCarousel component -------------------
+  // ------------------- NEW: ProductsCarousel component (responsive + fixed image size) -------------------
   function ProductsCarousel({ items }: { items: any[] }) {
     const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -715,9 +687,7 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
     // ------------------- NEW: sendWhatsApp helper -------------------
     const sendWhatsApp = (p: any) => {
       try {
-        // WhatsApp phone number (India): +91 94872 80241 => phone param should be country code + number without '+'
         const phone = "919487280241";
-        // Build message — include member details if available
         const memberName = (member && member.name) ? member.name : "Customer";
         const memberPhone = (member && member.phone) ? ` (${member.phone})` : "";
         const productTitle = p?.title ?? "Product";
@@ -726,8 +696,6 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
 
         const text = `Hello,%0AI'm ${memberName}${memberPhone}.%0AI am interested in *${productTitle}*%0AProduct ID: ${productId}%0APrice: ${productPrice}%0AKindly contact me.`;
         const url = `https://wa.me/${phone}?text=${text}`;
-
-        // open WhatsApp in new tab (web or app on mobile)
         window.open(url, "_blank");
       } catch (err) {
         console.error("Failed to open WhatsApp:", err);
@@ -736,36 +704,55 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
     };
     // ---------------------------------------------------------------------
 
+    // responsive card sizes (mobile smaller)
+    const mobileItemWidth = 160; // px
+    const desktopItemWidth = 220; // px
+
     return (
       <div className="relative">
         <button
           aria-label="Previous products"
           onClick={() => scrollBy("left")}
-          className="absolute left-0 top-1/2 -translate-y-1/2 z-20 rounded-full bg-white/6 p-2 shadow"
+          className={`absolute left-2 top-1/2 -translate-y-1/2 z-20 rounded-full bg-white/90 p-1 shadow border`}
+          style={{ transform: "translateY(-50%)" }}
         >
-          ‹
+          <span className="text-lg font-bold select-none">‹</span>
         </button>
 
         <div
           ref={containerRef}
-          className="overflow-x-auto no-scrollbar flex gap-4 py-2 px-6 scroll-smooth"
+          className="overflow-x-auto no-scrollbar flex gap-4 py-2 px-2 sm:px-6 scroll-smooth"
           style={{ scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}
         >
           {items.map((p) => (
             <div
               key={p.id}
-              className="min-w-[220px] max-w-[220px] flex-shrink-0 rounded-lg border bg-white p-3 shadow-sm"
-              style={{ scrollSnapAlign: "start" }}
+              // responsive min width: smaller on mobile, larger on desktop
+              className={`flex-shrink-0 rounded-lg border bg-white p-3 shadow-sm`}
+              style={{
+                minWidth: isMobile ? `${mobileItemWidth}px` : `${desktopItemWidth}px`,
+                maxWidth: isMobile ? `${mobileItemWidth}px` : `${desktopItemWidth}px`,
+                scrollSnapAlign: "start",
+              }}
             >
-              <div className="w-full h-36 overflow-hidden rounded-md bg-gray-100 flex items-center justify-center">
+              {/* FIXED image container: same height across breakpoints */}
+              <div
+                className="w-full overflow-hidden rounded-md bg-gray-100 flex items-center justify-center"
+                style={{
+                  height: isMobile ? 140 : 160, // mobile: 140px, desktop: 160px (keeps ratio consistent)
+                }}
+              >
                 <img
                   src={p.image || "https://via.placeholder.com/360x240?text=No+Image"}
                   alt={p.title}
                   className="object-cover w-full h-full"
+                  // ensure image covers area and maintains consistent crop
+                  loading="lazy"
                 />
               </div>
+
               <div className="mt-3">
-                <h4 className="font-semibold text-sm">{p.title}</h4>
+                <h4 className="font-semibold text-sm line-clamp-2">{p.title}</h4>
                 <div className="mt-1 flex items-center justify-between">
                   <div className="text-sm font-bold text-red-600">{p.priceLabel ?? (p.price ? `₹${p.price}` : "—")}</div>
                   <div className="text-xs text-muted-foreground">In stock</div>
@@ -773,13 +760,9 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
                 <p className="mt-2 text-xs text-muted-foreground line-clamp-2">{p.description ?? ""}</p>
 
                 <div className="mt-3 flex gap-2">
-                  
                   <button
-                    onClick={() => {
-                      // OPEN WHATSAPP with prefilled message to +91 94872 80241
-                      sendWhatsApp(p);
-                    }}
-                    className="rounded-md bg-gradient-to-r from-neon-green to-neon-blue px-3 py-1 text-sm text-white"
+                    onClick={() => sendWhatsApp(p)}
+                    className="flex-1 rounded-md bg-gradient-to-r from-neon-green to-neon-blue px-3 py-1 text-sm text-white"
                   >
                     Buy
                   </button>
@@ -792,9 +775,10 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
         <button
           aria-label="Next products"
           onClick={() => scrollBy("right")}
-          className="absolute right-0 top-1/2 -translate-y-1/2 z-20 rounded-full bg-white/6 p-2 shadow"
+          className={`absolute right-2 top-1/2 -translate-y-1/2 z-20 rounded-full bg-white/90 p-1 shadow border`}
+          style={{ transform: "translateY(-50%)" }}
         >
-          ›
+          <span className="text-lg font-bold select-none">›</span>
         </button>
       </div>
     );
@@ -815,7 +799,6 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
 
   // helpers to extract today's plan
   const weekdayKeyForDate = (d: Date) => {
-    // return the plan field name as in API: monday_plan, tuesday_plan, ...
     const map = ["sunday_plan", "monday_plan", "tuesday_plan", "wednesday_plan", "thursday_plan", "friday_plan", "saturday_plan"];
     return map[d.getDay()] ?? "monday_plan";
   };
@@ -830,13 +813,11 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
 
   const getDietTextFromPlan = (plan?: Plan) => {
     if (!plan) return null;
-    // prefer explicit diet_plan, else Description, else goals
     return (plan.diet_plan && plan.diet_plan.trim()) || (plan.Description && plan.Description.trim()) || (plan.goals && String(plan.goals).trim()) || null;
   };
 
   const renderPlanText = (txt?: string | null) => {
     if (!txt) return <div className="text-sm text-muted-foreground">Not provided</div>;
-    // preserve newlines
     const parts = txt.split(/\r?\n/).filter(Boolean);
     return (
       <div className="text-sm leading-relaxed whitespace-pre-wrap">
@@ -870,26 +851,48 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
               </div>
 
               <div>
-                <h2 className="text-2xl font-bold">{displayName}</h2>
-                <div className="text-sm text-muted-foreground flex items-center gap-3 mt-1">
-                  <div className="flex items-center gap-1"><Mail className="h-4 w-4" /> <span>{displayEmail}</span></div>
-                  <div className="flex items-center gap-1"><Phone className="h-4 w-4" /> <span>{displayPhone}</span></div>
-                </div>
+  <h2 className="text-2xl font-bold">{displayName}</h2>
 
-                <div className="mt-3 flex items-center gap-3">
-                  <div className="text-xs text-muted-foreground">Start date</div>
-                  <div className="text-sm font-medium">{startDateDisplay}</div>
-                </div>
+  {/* stacked email + phone (phone on next line) */}
+  <div className="text-sm text-muted-foreground mt-1">
+    <div className="flex items-center gap-1">
+      <Mail className="h-4 w-4" />
+      <span>{displayEmail}</span>
+    </div>
 
-                <div className="mt-3 flex items-center gap-2">
-                  <button onClick={() => openEdit()} className="px-3 py-1 inline-flex items-center gap-2 bg-white/6 hover:bg-white/9 rounded-md border text-sm">
-                    <Edit2 className="h-4 w-4" /> Edit profile
-                  </button>
-                  <button onClick={() => navigator?.share ? navigator.share({ title: `Contact ${displayName}`, text: displayPhone }) : window.open(`tel:${member?.phone ?? ""}`)} className="px-3 py-1 border rounded-md text-sm">
-                    Call
-                  </button>
-                </div>
-              </div>
+    <div className="flex items-center gap-1 mt-1">
+      <Phone className="h-4 w-4" />
+      {/* break-words ensures long numbers/wrapping behave nicely on small screens */}
+      <span className="break-words">{displayPhone}</span>
+    </div>
+  </div>
+
+  <div className="mt-3 flex items-center gap-3">
+    <div className="text-xs text-muted-foreground">Start date</div>
+    <div className="text-sm font-medium">{startDateDisplay}</div>
+  </div>
+
+  <div className="mt-3 flex items-center gap-2">
+    <button
+      onClick={() => openEdit()}
+      className="px-3 py-1 inline-flex items-center gap-2 bg-white/6 hover:bg-white/9 rounded-md border text-sm"
+    >
+      <Edit2 className="h-4 w-4" /> Edit profile
+    </button>
+
+    <button
+      onClick={() =>
+        navigator?.share
+          ? navigator.share({ title: `Contact ${displayName}`, text: displayPhone })
+          : window.open(`tel:${member?.phone ?? ""}`)
+      }
+      className="px-3 py-1 border rounded-md text-sm"
+    >
+      Call
+    </button>
+  </div>
+</div>
+
             </div>
 
             {/* quick stats block */}
@@ -916,6 +919,7 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
 
       {/* ---------- top summary (original) ---------- */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
+        {/* ... the 4 small cards remain unchanged ... */}
         <Card className="p-2 flex flex-col justify-between " style={{ borderRadius: 12, border: "4px solid rgba(255,255,255,0.06)" }}>
           <CardHeader className="">
             <CardTitle className="flex items-center gap-2 text-sm font-medium">
@@ -995,7 +999,6 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
                 </div>
                 <div className="text-xs text-muted-foreground">Measured on: {latestMeasurement.measurement_date ? new Date(latestMeasurement.measurement_date).toLocaleDateString() : "—"}</div>
                 <div className="">
-                  {/* <button onClick={() => onNavigate ? onNavigate("measurements" as unknown as NavigationItem) : window.location.href = "/measurements"} className="px-3 py-1 rounded bg-gradient-to-r from-neon-green to-neon-blue text-white">View Measurements</button> */}
                 </div>
               </div>
             ) : (
@@ -1043,7 +1046,7 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
             <CardDescription className={isTablet ? "text-xs" : ""}>Your Today workout or diet plan</CardDescription>
           </CardHeader>
           <CardContent>
-            {/* Today's Plan: from assigned plan (if any) */}
+            {/* Today's Plan */}
             {assignedPlanLoading ? (
               <div className="text-sm text-muted-foreground">Loading today's plan...</div>
             ) : activeAssignedPlan && activeAssignedPlan.plan ? (
@@ -1064,9 +1067,6 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
                   <div className="text-xs text-muted-foreground">Today's Workout</div>
                   <div className="mt-1 p-3 bg-white/5 rounded border">{renderPlanText(getTodayWorkoutText(activeAssignedPlan.plan) ?? "No workout specified for today.")}</div>
                 </div>
-
-
-                
               </div>
             ) : (
               <div className="space-y-2">
@@ -1077,7 +1077,7 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
           </CardContent>
         </Card>
 
-        {/* Activity + Attendance (keeps original card as companion) */}
+        {/* Activity + Attendance */}
         <Card className="p-4">
           <CardHeader>
             <CardTitle className={`flex items-center gap-2 ${isTablet ? "text-base" : "text-lg"}`}>
@@ -1111,109 +1111,323 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
         </Card>
       </div>
 
-      {/* ---------- Add Measurement Modal ---------- */}
-      {isAddMeasurementOpen && (
-        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center" style={{backgroundColor:"#000", height:"300px", width:"500px", justifyContent:"center", left:"300px", top:"200px"}}>
-          <div className="absolute inset-0 bg-black/40" onClick={() => { if (!measureSubmitting) setIsAddMeasurementOpen(false); }} />
-          <form
-            onSubmit={submitCreateMeasurement}
-            className="relative w-full md:w-[520px] max-h-[90vh] overflow-auto bg-white/6 backdrop-blur-sm rounded-t-lg md:rounded-lg p-4 m-4"
-            role="dialog"
-            aria-modal
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Add Measurement</h3>
-              <button type="button" onClick={() => { if (!measureSubmitting) setIsAddMeasurementOpen(false); }} className="px-2 py-1 rounded hover:bg-white/5">Close</button>
-            </div>
+      {/* ---------- Edit Profile Modal ---------- */}
+{profileOpen && editState && (
+  <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+    {/* FULL BLACK overlay */}
+    <div
+      className="absolute inset-0 bg-black"
+      onClick={() => setProfileOpen(false)}
+      style={{backgroundColor:"#000"}}
+    />
 
-            <div className="mt-4 space-y-3">
-              <div>
-                <label className="text-sm block mb-1">Measurement date *</label>
-                <input
-                  type="date"
-                  value={measureForm.measurement_date}
-                  onChange={(e) => setMeasureForm(s => ({ ...s, measurement_date: e.target.value }))}
-                  className="w-full p-2 rounded border bg-transparent"
-                  required
-                />
-              </div>
+    {/* modal */}
+    <div
+      className="
+        relative w-full
+        sm:w-[720px]
+        max-h-[90vh]
+        overflow-auto
+        bg-white
+        rounded-t-2xl sm:rounded-xl
+        p-4
+        shadow-xl
+      "
+      role="dialog"
+      aria-modal
+    >
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold">Edit Profile</h3>
+        <button
+          onClick={() => setProfileOpen(false)}
+          className="px-2 py-1 rounded hover:bg-gray-100"
+        >
+          Close
+        </button>
+      </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-sm block mb-1">Weight (kg)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    value={measureForm.weight}
-                    onChange={(e) => setMeasureForm(s => ({ ...s, weight: e.target.value }))}
-                    className="w-full p-2 rounded border bg-transparent"
-                    placeholder="e.g. 72.5"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-sm block mb-1">Height (cm)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    value={measureForm.height}
-                    onChange={(e) => setMeasureForm(s => ({ ...s, height: e.target.value }))}
-                    className="w-full p-2 rounded border bg-transparent"
-                    placeholder="e.g. 172.0"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 justify-end">
-                <button type="button" onClick={() => setIsAddMeasurementOpen(false)} disabled={measureSubmitting} className="px-3 py-1 border rounded-md">Cancel</button>
-                <button type="submit" disabled={measureSubmitting} className="px-3 py-1 rounded-md bg-indigo-600 text-white">{measureSubmitting ? "Saving..." : "Save Measurement"}</button>
-              </div>
-            </div>
-          </form>
+      <div className="mt-4 space-y-3">
+        <div>
+          <label className="text-sm block mb-1">Full name</label>
+          <input
+            value={editState.name ?? ""}
+            onChange={(e) =>
+              setEditState((s) => ({ ...(s ?? {}), name: e.target.value }))
+            }
+            className="w-full p-2 rounded border"
+          />
         </div>
-      )}
 
-      {/* ---------- Edit Profile Modal / Drawer (simple) ---------- */}
-      {profileOpen && editState && (
-        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center" style={{backgroundColor:"#000", height:"470px", width:"900px", justifyContent:"center", left:"300px", top:"100px", padding:"20px"}}>
-          <div className="absolute inset-0 bg-black/40" onClick={() => setProfileOpen(false)} />
-          <div className="relative w-full md:w-[720px] max-h-[90vh] overflow-auto bg-white/6 backdrop-blur-sm rounded-t-lg md:rounded-lg p-4 m-4" role="dialog" aria-modal>
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Edit Profile</h3>
-              <button onClick={() => setProfileOpen(false)} className="px-2 py-1 rounded hover:bg-white/5">Close</button>
-            </div>
+        <div>
+          <label className="text-sm block mb-1">Email</label>
+          <input
+            value={editState.email ?? ""}
+            onChange={(e) =>
+              setEditState((s) => ({ ...(s ?? {}), email: e.target.value }))
+            }
+            className="w-full p-2 rounded border"
+          />
+        </div>
 
-            <div className="mt-4 space-y-3">
-              <div>
-                <label className="text-sm block mb-1">Full name</label>
-                <input value={editState.name ?? ""} onChange={(e) => setEditState(s => ({ ...(s ?? {}), name: e.target.value }))} className="w-full p-2 rounded border bg-transparent" />
-              </div>
+        <div>
+          <label className="text-sm block mb-1">Phone</label>
+          <input
+            value={editState.phone ?? ""}
+            onChange={(e) =>
+              setEditState((s) => ({ ...(s ?? {}), phone: e.target.value }))
+            }
+            className="w-full p-2 rounded border"
+          />
+        </div>
 
-              <div>
-                <label className="text-sm block mb-1">Email</label>
-                <input value={editState.email ?? ""} onChange={(e) => setEditState(s => ({ ...(s ?? {}), email: e.target.value }))} className="w-full p-2 rounded border bg-transparent" />
-              </div>
+        <div>
+          <label className="text-sm block mb-1">Start date</label>
+          <input
+            type="date"
+            value={
+              editState.start_date
+                ? new Date(editState.start_date).toISOString().slice(0, 10)
+                : ""
+            }
+            onChange={(e) =>
+              setEditState((s) => ({
+                ...(s ?? {}),
+                start_date: e.target.value
+                  ? new Date(e.target.value).toISOString()
+                  : null,
+              }))
+            }
+            className="w-full p-2 rounded border"
+          />
+        </div>
 
-              <div>
-                <label className="text-sm block mb-1">Phone</label>
-                <input value={editState.phone ?? ""} onChange={(e) => setEditState(s => ({ ...(s ?? {}), phone: e.target.value }))} className="w-full p-2 rounded border bg-transparent" />
-              </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            onClick={() => setProfileOpen(false)}
+            className="px-4 py-1 border rounded-md"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => saveProfile()}
+            className="px-4 py-1 rounded-md bg-indigo-600 text-white"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
 
-              <div>
-                <label className="text-sm block mb-1">Start date</label>
-                <input type="date" value={editState.start_date ? new Date(editState.start_date).toISOString().slice(0, 10) : ""} onChange={(e) => setEditState(s => ({ ...(s ?? {}), start_date: e.target.value ? new Date(e.target.value).toISOString() : null }))} className="w-full p-2 rounded border bg-transparent" />
-              </div>
 
-              <div className="flex items-center gap-2 justify-end">
-                <button onClick={() => setProfileOpen(false)} className="px-3 py-1 border rounded-md">Cancel</button>
-                <button onClick={() => saveProfile()} className="px-3 py-1 rounded-md bg-indigo-600 text-white">Save</button>
-              </div>
-            </div>
+      {/* ---------- Add Measurement Modal ---------- */}
+{isAddMeasurementOpen && (
+  <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+    {/* overlay */}
+    <div
+      className="absolute inset-0 bg-black/50"
+      onClick={() => !measureSubmitting && setIsAddMeasurementOpen(false)}
+    />
+
+    {/* modal */}
+    <form
+      onSubmit={submitCreateMeasurement}
+      className="
+        relative w-full
+        sm:w-[520px]
+        max-h-[90vh]
+        overflow-auto
+        bg-white
+        rounded-t-2xl sm:rounded-xl
+        p-4
+        shadow-xl
+      "
+      role="dialog"
+      aria-modal
+    >
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold">Add Measurement</h3>
+        <button
+          type="button"
+          onClick={() => !measureSubmitting && setIsAddMeasurementOpen(false)}
+          className="px-2 py-1 rounded hover:bg-gray-100"
+        >
+          Close
+        </button>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        <div>
+          <label className="text-sm block mb-1">Measurement date *</label>
+          <input
+            type="date"
+            value={measureForm.measurement_date}
+            onChange={(e) =>
+              setMeasureForm((s) => ({ ...s, measurement_date: e.target.value }))
+            }
+            className="w-full p-2 rounded border"
+            required
+          />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-sm block mb-1">Weight (kg)</label>
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              value={measureForm.weight}
+              onChange={(e) =>
+                setMeasureForm((s) => ({ ...s, weight: e.target.value }))
+              }
+              className="w-full p-2 rounded border"
+            />
+          </div>
+
+          <div>
+            <label className="text-sm block mb-1">Height (cm)</label>
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              value={measureForm.height}
+              onChange={(e) =>
+                setMeasureForm((s) => ({ ...s, height: e.target.value }))
+              }
+              className="w-full p-2 rounded border"
+            />
           </div>
         </div>
-      )}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={() => setIsAddMeasurementOpen(false)}
+            disabled={measureSubmitting}
+            className="px-4 py-1 border rounded-md"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={measureSubmitting}
+            className="px-4 py-1 rounded-md bg-indigo-600 text-white"
+          >
+            {measureSubmitting ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+)}
+
+
+      {/* ---------- Add Measurement Modal ---------- */}
+{isAddMeasurementOpen && (
+  <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+    {/* FULL BLACK overlay */}
+    <div
+      className="absolute inset-0 bg-black"
+      onClick={() => !measureSubmitting && setIsAddMeasurementOpen(false)}
+      style={{ backgroundColor:"#000"}}
+    />
+
+    {/* modal */}
+    <form
+      onSubmit={submitCreateMeasurement}
+      className="
+        relative w-full
+        sm:w-[520px]
+        max-h-[90vh]
+        overflow-auto
+        bg-white
+        rounded-t-2xl sm:rounded-xl
+        p-4
+        shadow-xl
+      "
+      role="dialog"
+      aria-modal
+    >
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold">Add Measurement</h3>
+        <button
+          type="button"
+          onClick={() => !measureSubmitting && setIsAddMeasurementOpen(false)}
+          className="px-2 py-1 rounded hover:bg-gray-100"
+        >
+          Close
+        </button>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        <div>
+          <label className="text-sm block mb-1">Measurement date *</label>
+          <input
+            type="date"
+            value={measureForm.measurement_date}
+            onChange={(e) =>
+              setMeasureForm((s) => ({ ...s, measurement_date: e.target.value }))
+            }
+            className="w-full p-2 rounded border"
+            required
+          />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-sm block mb-1">Weight (kg)</label>
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              value={measureForm.weight}
+              onChange={(e) =>
+                setMeasureForm((s) => ({ ...s, weight: e.target.value }))
+              }
+              className="w-full p-2 rounded border"
+            />
+          </div>
+
+          <div>
+            <label className="text-sm block mb-1">Height (cm)</label>
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              value={measureForm.height}
+              onChange={(e) =>
+                setMeasureForm((s) => ({ ...s, height: e.target.value }))
+              }
+              className="w-full p-2 rounded border"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={() => setIsAddMeasurementOpen(false)}
+            disabled={measureSubmitting}
+            className="px-4 py-1 border rounded-md"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={measureSubmitting}
+            className="px-4 py-1 rounded-md bg-indigo-600 text-white"
+          >
+            {measureSubmitting ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+)}
+
+
     </div>
   );
 }

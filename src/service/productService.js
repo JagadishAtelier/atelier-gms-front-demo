@@ -17,20 +17,23 @@ const productService = {
    *  - payload: plain object -> sent as JSON
    *  - payload: FormData -> sent as multipart/form-data (do NOT set Content-Type manually)
    */
-  async createProduct(payload) {
-    try {
-      const isForm = typeof FormData !== "undefined" && payload instanceof FormData;
+  async createProduct(formData) {
+  try {
+    const headers = buildHeaders(); // DO NOT set Content-Type
 
-      const headers = buildHeaders(isForm ? {} : { "Content-Type": "application/json" });
+    const res = await axios.post(
+      `${API_URL}/product`,
+      formData,
+      { headers }
+    );
 
-      const res = await axios.post(`${API_URL}/product`, payload, {
-        headers,
-      });
-      return res.data;
-    } catch (err) {
-      throw err.response?.data || err;
-    }
-  },
+    return res.data;
+  } catch (err) {
+    throw err.response?.data || err;
+  }
+},
+
+
 
   /**
    * ✅ Bulk Upload Products (CSV / Excel)

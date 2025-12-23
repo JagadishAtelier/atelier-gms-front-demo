@@ -45,7 +45,6 @@ export default function ProductManagement() {
 
   const [imageFile, setImageFile] = React.useState<File | null>(null);
   const [loading, setLoading] = React.useState(false);
-  const [bulkFile, setBulkFile] = React.useState<File | null>(null);
 
   const parsePriceToNumber = (priceStr: string) => {
     const onlyNumber = priceStr.replace(/[^\d.]/g, "");
@@ -56,21 +55,26 @@ export default function ProductManagement() {
     try {
       setLoading(true);
       const res = await productService.getProducts({ page: 1, limit: 50 });
-      const list = res?.data?.data || res?.data || [];
+      const list = res?.data?.data || res?.data || res?.items || [];
 
-      const mapped: Product[] = list.map((p: any) => ({
-        id: p.id,
-        title: p.title,
-        price: `₹${Number(p.price).toFixed(2)}`,
-        compprice: p.compprice ? `₹${p.compprice}` : undefined,
-        image: p.product_image_url?.startsWith("/uploads")
-          ? `${BASE_API}${p.product_image_url}`
-          : p.product_image_url,
-      }));
-      console.log("Fetched products:", mapped);
+      const mapped: Product[] = list.map((p: any) => {
+        const imgUrl = p.product_image_url
+          ? p.product_image_url.startsWith("/uploads")
+            ? `${BASE_API}${p.product_image_url}`
+            : p.product_image_url
+          : undefined;
+
+        return {
+          id: p.id,
+          title: p.title,
+          price: `₹${Number(p.price).toFixed(2)}`,
+          compprice: p.compprice ? `₹${p.compprice}` : undefined,
+          image: imgUrl,
+        } as Product;
+      });
 
       setProducts(mapped.length ? mapped : initialProducts);
-    } catch {
+    } catch (e) {
       setProducts(initialProducts);
     } finally {
       setLoading(false);
@@ -99,27 +103,49 @@ export default function ProductManagement() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // simple validation
+    if (!form.title?.trim()) {
+      alert("Title is required");
+      return;
+    }
+    if (!form.price?.trim()) {
+      alert("Price is required");
+      return;
+    }
+
     try {
       setLoading(true);
 
-      const formData = new FormData();
-      formData.append("title", form.title);
-      formData.append("price", String(parsePriceToNumber(form.price)));
+      const fd = new FormData();
+      fd.append("title", form.title);
+      fd.append("price", String(parsePriceToNumber(form.price)));
 
+      if (form.compprice) fd.append("compprice", String(parsePriceToNumber(form.compprice)));
       if (imageFile) {
-        formData.append("image", imageFile); // multer expects "image"
+        // backend multer expects field name "image"
+        fd.append("image", imageFile);
       }
 
-      const res = await productService.createProduct(formData);
-      const p = res.data || res;
+      // call service that sends FormData (no content-type explicitly set)
+      const res = await productService.createProduct(fd);
+      // server may return product object directly or in res.data
+      const p = res?.data || res;
+
+      // compute image url returned by server
+      let imageUrl: string | undefined = undefined;
+      if (p?.product_image_url) {
+        imageUrl = p.product_image_url.startsWith("/uploads")
+          ? `${BASE_API}${p.product_image_url}`
+          : p.product_image_url;
+      } else if (form.image) {
+        imageUrl = form.image; // fallback to preview
+      }
 
       const newProduct: Product = {
         id: p.id,
         title: p.title,
         price: `₹${Number(p.price).toFixed(2)}`,
-        image: p.product_image_url
-          ? `${BASE_API}${p.product_image_url}`
-          : form.image,
+        image: imageUrl,
       };
 
       setProducts((prev) => [newProduct, ...prev]);
@@ -179,6 +205,14 @@ export default function ProductManagement() {
                 />
 
                 <input
+                  name="compprice"
+                  value={form.compprice}
+                  onChange={handleChange}
+                  placeholder="Compare Price (optional)"
+                  className="w-full rounded-md border px-3 py-2 text-sm"
+                />
+
+                <input
                   type="file"
                   accept="image/*"
                   onChange={handleImageSelect}
@@ -202,9 +236,10 @@ export default function ProductManagement() {
                   </Dialog.Close>
                   <button
                     type="submit"
-                    className="rounded-md bg-gradient-to-r from-neon-green to-neon-blue px-4 py-2 text-sm text-white"
+                    disabled={loading}
+                    className="rounded-md bg-gradient-to-r from-neon-green to-neon-blue px-4 py-2 text-sm text-white disabled:opacity-60"
                   >
-                    Save
+                    {loading ? "Saving..." : "Save"}
                   </button>
                 </div>
               </form>
