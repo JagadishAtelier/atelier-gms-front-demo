@@ -530,42 +530,35 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
 
   // Save profile — tries PUT and updates local state
   async function saveProfile() {
-    if (!member || !editState) return;
-    const payload: any = {
-      ...member,
-      name: editState.name,
-      email: editState.email,
-      phone: editState.phone,
-      start_date: editState.start_date,
-    };
+  if (!member || !editState) return;
 
-    try {
-      toast.loading("Saving profile...");
-      const res = await fetch(`/api/members/${member.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        let msg = `Error ${res.status}`;
-        try {
-          const j = await res.json();
-          msg = j?.message ?? msg;
-        } catch {}
-        throw new Error(msg);
-      }
-      const j = await res.json();
-      const updated = j?.data ? j.data : payload;
-      setMember(updated);
-      setProfileOpen(false);
-      toast.success("Profile updated");
-    } catch (err: any) {
-      console.error("Failed to save profile", err);
-      setMember(prev => ({ ...(prev as Member), ...payload }));
-      setProfileOpen(false);
-      toast.error("Failed to save to server, saved locally");
-    }
+  const payload: any = {
+    name: editState.name,
+    email: editState.email,
+    phone: editState.phone,
+    start_date: editState.start_date,
+  };
+
+  try {
+    const res = await memberService.updateMember(member.id, payload);
+
+    // normalize response
+    const updated =
+      res?.data && typeof res.data === "object" ? res.data : payload;
+
+    setMember((prev) => ({
+      ...(prev as Member),
+      ...updated,
+    }));
+
+    setProfileOpen(false);
+    toast.success("Profile updated successfully");
+  } catch (err: any) {
+    console.error("Failed to update profile", err);
+    toast.error(err?.message || "Failed to update profile");
   }
+}
+
 
   // click handler for Add Measurement: open modal (instead of navigating)
   const handleAddMeasurement = () => {
@@ -791,7 +784,7 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
   // profile display helpers
   const avatar = (member?.image_url && member.image_url.length > 5) ? member.image_url : null;
   const displayName = member?.name ?? "Member";
-  const displayEmail = member?.email ?? "—";
+  // const displayEmail = member?.email ?? "—";
   const displayPhone = member?.phone ?? "—";
   const startDateDisplay = member?.start_date ? new Date(member.start_date).toLocaleDateString() : "—";
 
@@ -856,8 +849,8 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
   {/* stacked email + phone (phone on next line) */}
   <div className="text-sm text-muted-foreground mt-1">
     <div className="flex items-center gap-1">
-      <Mail className="h-4 w-4" />
-      <span>{displayEmail}</span>
+      {/* <Mail className="h-4 w-4" /> */}
+      {/* <span>{displayEmail}</span> */}
     </div>
 
     <div className="flex items-center gap-1 mt-1">
@@ -878,17 +871,6 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
       className="px-3 py-1 inline-flex items-center gap-2 bg-white/6 hover:bg-white/9 rounded-md border text-sm"
     >
       <Edit2 className="h-4 w-4" /> Edit profile
-    </button>
-
-    <button
-      onClick={() =>
-        navigator?.share
-          ? navigator.share({ title: `Contact ${displayName}`, text: displayPhone })
-          : window.open(`tel:${member?.phone ?? ""}`)
-      }
-      className="px-3 py-1 border rounded-md text-sm"
-    >
-      Call
     </button>
   </div>
 </div>

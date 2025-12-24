@@ -1531,12 +1531,22 @@ export function MembershipManagement() {
                         <Button variant="ghost" size="sm" onClick={() => handleViewProfile(member)} className={`hover:bg-neon-green/10 hover:text-neon-green ${isTablet ? 'px-2 py-1' : ''}`}><User className={`${iconClass}`} /></Button>
 
                         <Button variant="ghost" size="sm" onClick={() => handleViewBilling(member)} className={`hover:bg-neon-blue/10 hover:text-neon-blue ${isTablet ? 'px-2 py-1' : ''}`}><CreditCard className={`${iconClass}`} /></Button>
+                        <Button
+                                variant="ghost"
+                                size="sm"
+                                // onClick={() => handleSignIn(member)}
+                                className={`${isTablet ? 'px-2 py-1 text-sm' : ''} text-green-600 hover:bg-neon-green/10`}
+                                // disabled={processing}
+                                title="Sign in for today"
+                              >
+                                {'Sign In'}
+                              </Button>
 
                         {/* Attendance action: Sign In / Doing workout (click -> Sign Out) / Attended */}
-                        {(() => {
+                        {/* {(() => {
                           const att = todayAttendanceMap[String(member.id)];
                           const processing = Boolean(attendanceProcessing[String(member.id)]);
-                          // if there is no attendance today -> show Sign In
+                         
                           if (!att) {
                             return (
                               <Button
@@ -1552,7 +1562,6 @@ export function MembershipManagement() {
                             );
                           }
 
-                          // if signed in but not signed out -> show "Doing workout" and clicking it signs out
                           const hasSignIn = att.sign_in || att.signIn || att.signInAt || att.sign_in_at;
                           const hasSignOut = att.sign_out || att.signOut || att.signOutAt || att.sign_out_at;
                           if (hasSignIn && !hasSignOut) {
@@ -1570,14 +1579,12 @@ export function MembershipManagement() {
                             );
                           }
 
-                          // if signed out already -> show "Attended"
                           if (hasSignIn && hasSignOut) {
                             return (
                               <Badge className={isTablet ? 'text-xs px-2 py-1' : 'px-2 py-0.5'}>Attended</Badge>
                             );
                           }
 
-                          // fallback
                           return (
                             <Button
                               variant="ghost"
@@ -1590,7 +1597,7 @@ export function MembershipManagement() {
                               {processing ? '...' : 'Attend'}
                             </Button>
                           );
-                        })()}
+                        })()} */}
 
                         {member.is_active === false || member.status === 'expired' ? (
                           <Button variant="ghost" size="sm" onClick={() => handleRestore(member.id)} className={`text-green-600 hover:bg-neon-green/10 ${isTablet ? 'px-2 py-1 text-sm' : ''}`}>Restore</Button>
