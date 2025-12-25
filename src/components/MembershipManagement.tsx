@@ -1208,7 +1208,8 @@ export function MembershipManagement() {
                 <div className="grid sm:grid-cols-2 gap-2">
                   <div>
                     <Label className={`${smallText}`}>Amount</Label>
-                    <p className={`${smallText} text-neon-green font-medium`}>{formatCurrencyINR(selectedMember.amount)}</p>
+                    <p className={`${smallText} text-neon-green font-medium`}>{formatCurrencyINR(billingMember?.amount)}
+</p>
                   </div>
                   <div>
                     <Label className={`${smallText}`}>Start Date</Label>
@@ -1216,7 +1217,7 @@ export function MembershipManagement() {
                   </div>
                   <div>
                     <Label className={`${smallText}`}>End Date</Label>
-                    <p className={`${smallText} text-muted-foreground`}>{selectedMember.endDate ? new Date(selectedMember.endDate).toLocaleDateString() : 'N/A'}</p>
+                    <p className={`${smallText} text-muted-foreground`}>{billingMember?.lastPayment ? formatPretty(billingMember.lastPayment) : 'N/A'}</p>
                   </div>
                 </div>
               </div>
@@ -1493,7 +1494,7 @@ export function MembershipManagement() {
                   <TableHead className="hidden sm:table-cell">Contact</TableHead>
                   <TableHead className="hidden md:table-cell">Period</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="text-center">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

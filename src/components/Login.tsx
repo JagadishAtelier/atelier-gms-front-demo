@@ -148,7 +148,6 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
               <Dumbbell className="w-8 h-8 text-white" />
             </div>
           </div>
-          <h1 className="text-2xl text-center text-foreground font-bold">Atelier Fit</h1>
           <p className="text-muted-foreground text-center mt-1">Gym Management System</p>
         </div>
 
@@ -334,8 +333,13 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         <p className="text-xs text-muted-foreground text-center mt-4">
           Use your registered email or phone to log in.
         </p>
+        <footer className="text-center mt-6 text-xs text-muted-foreground">
+          © 2025 Flex Culture Powered by <a href="https://ateliertechnologysolutions.com/">Atelier technologies</a> 
+        </footer>
       </div>
+      
     </div>
+    
   );
 };
 

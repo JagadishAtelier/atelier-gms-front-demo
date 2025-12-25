@@ -39,6 +39,7 @@ import {
 import membermembershipService from "@/service/membermembershipService";
 import memberService from "@/service/memberService";
 import membershipService from "@/service/membershipService";
+import gymService from "@/service/gymService";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -79,12 +80,15 @@ interface MembershipOption {
 
 export function InvoiceManagement(): JSX.Element {
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "pending" | "overdue">("all");
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "paid" | "pending" | "overdue"
+  >("all");
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(false);
 
   const [members, setMembers] = useState<MemberOption[]>([]);
   const [memberships, setMemberships] = useState<MembershipOption[]>([]);
+  const [gym, setGym] = useState<any | null>(null); // <-- primary gym info
 
   const [openModal, setOpenModal] = useState(false);
   const [newInvoice, setNewInvoice] = useState({
@@ -144,10 +148,15 @@ export function InvoiceManagement(): JSX.Element {
 
       setInvoices(formatted);
 
-      // fetch members and memberships to populate dropdowns
-      const [membersRes, membershipsRes] = await Promise.allSettled([
+      // fetch members, memberships, and gyms to populate dropdowns and print header
+      const [
+        membersRes,
+        membershipsRes,
+        gymsRes
+      ] = await Promise.allSettled([
         memberService.getMembers({ limit: 1000 }),
         membershipService.getMemberships({ limit: 1000 }),
+        gymService.getGyms({ page: 1, limit: 10 }), // fetch gyms (we'll take the first gym as primary)
       ]);
 
       const mList: MemberOption[] =
@@ -175,6 +184,18 @@ export function InvoiceManagement(): JSX.Element {
 
       setMembers(mList);
       setMemberships(msList);
+
+      // handle gyms result
+      if (gymsRes.status === "fulfilled") {
+        const gymsList = extractListFromResponse(gymsRes.value);
+        if (Array.isArray(gymsList) && gymsList.length > 0) {
+          setGym(gymsList[0]); // use first gym as primary
+        } else {
+          setGym(null);
+        }
+      } else {
+        setGym(null);
+      }
     } catch (err: any) {
       console.error(err);
       toast.error(err?.message || "Failed to load invoices and lists");
@@ -429,6 +450,13 @@ export function InvoiceManagement(): JSX.Element {
     const amount = formatCurrency(invoice.amount);
     const lateFee = formatCurrency(invoice.lateFee || 0);
 
+    // use gym info if available, otherwise fall back to defaults
+    const gymName = gym?.name ? escapeHtml(gym.name) : "Your Company / Gym";
+    const gymAddress = gym?.address ? escapeHtml(gym.address) : "Address line 1<br/>Address line 2";
+    const gymPhone = gym?.phone ? escapeHtml(gym.phone) : "";
+    const gymEmail = gym?.email ? escapeHtml(gym.email) : "support@example.com";
+    const gymLogo = gym?.logo_url ? String(gym.logo_url) : null;
+
     const html = `<!doctype html>
       <html>
       <head>
@@ -438,8 +466,8 @@ export function InvoiceManagement(): JSX.Element {
         <style>
           body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial; margin: 20px; color: #111827; }
           .invoice { max-width: 800px; margin: 0 auto; border: 1px solid #e5e7eb; padding: 24px; border-radius: 8px; }
-          .header { display:flex; justify-content:space-between; align-items:center; }
-          .brand { font-size: 18px; font-weight: 700; }
+          .header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+          .brand { font-size: 18px; font-weight: 700; display:flex; align-items:center; gap:12px; }
           .meta { text-align: right; font-size: 13px; color: #374151; }
           .section { margin-top: 18px; }
           table { width:100%; border-collapse: collapse; margin-top: 12px; }
@@ -447,6 +475,7 @@ export function InvoiceManagement(): JSX.Element {
           .totals td { border: none; }
           .right { text-align: right; }
           .small { font-size: 13px; color: #6b7280; }
+          img.logo { max-height: 56px; object-fit: contain; }
           @media print {
             body { margin:0; }
             .invoice { border: none; }
@@ -456,12 +485,15 @@ export function InvoiceManagement(): JSX.Element {
       <body>
         <div class="invoice">
           <div class="header">
-            <div>
-              <div class="brand">Your Company / Gym</div>
-              <div class="small">Address line 1<br/>Address line 2</div>
+            <div class="brand">
+              ${gymLogo ? `<img src="${escapeHtml(gymLogo)}" alt="${gymName}" class="logo" />` : ""}
+              <div>
+                <div style="font-weight:700">${gymName}</div>
+                <div class="small">${gymAddress}${gymPhone ? `<br/>Phone: ${gymPhone}` : ""}${gymEmail ? `<br/>Email: ${gymEmail}` : ""}</div>
+              </div>
             </div>
             <div class="meta">
-              <div>Invoice: <strong>${invoice.invoiceNumber}</strong></div>
+              <div>Invoice: <strong>${escapeHtml(invoice.invoiceNumber)}</strong></div>
               <div>Date: ${issueDate}</div>
               <div>Due: ${dueDate}</div>
             </div>
@@ -501,7 +533,7 @@ export function InvoiceManagement(): JSX.Element {
 
           <div class="section small">
             <div>Status: <strong>${escapeHtml(invoice.status)}</strong></div>
-            <div style="margin-top:10px;">Thank you for your payment. If you have any questions, contact support@example.com</div>
+            <div style="margin-top:10px;">Thank you for your payment. If you have any questions, contact ${escapeHtml(gymEmail)}</div>
           </div>
         </div>
 
@@ -839,3 +871,5 @@ export function InvoiceManagement(): JSX.Element {
     </div>
   );
 }
+
+export default InvoiceManagement;
