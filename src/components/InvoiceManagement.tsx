@@ -124,27 +124,42 @@ export function InvoiceManagement(): JSX.Element {
           ? mmRes.data.data
           : [];
 
-      const formatted: Invoice[] = (mmData || []).map((item: any) => ({
-        id: item.id ?? Math.random().toString(36).substr(2, 9),
-        backendId: item.id,
-        invoiceNumber:
-          item.invoice_number ??
-          (item.id ? `INV-${String(item.id).slice(0, 8).toUpperCase()}` : `INV-${Date.now()}`),
-        memberId: item.member_id ?? item.Member?.id,
-        memberName: item.Member?.name || item.member_name || "Unknown",
-        memberEmail: item.Member?.email || item.member_email || "N/A",
-        amount: Number(item.amount ?? item.Membership?.price ?? 0),
-        dueDate: item.end_date ?? item.due_date ?? new Date().toISOString(),
-        issueDate: item.start_date ?? item.issue_date ?? new Date().toISOString(),
-        status:
-          item.payment_status === "paid" || item.status === "paid" || item.status === "active"
-            ? "paid"
-            : item.status === "expired" || item.payment_status === "unpaid"
-            ? "pending"
-            : "pending",
-        lateFee: Number(item.late_fee ?? 0),
-        planType: item.Membership?.name ?? item.plan_type ?? "N/A",
-      }));
+      const formatted: Invoice[] = (mmData || []).map((item: any) => {
+        // Try multiple sources for amount in order of preference
+        let amount = 0;
+        if (item.Membership?.price) {
+          // First: Membership.price (when Membership object exists)
+          amount = Number(item.Membership.price);
+        } else if (item.amount_paid) {
+          // Second: amount_paid field (direct amount paid for this membership)
+          amount = Number(item.amount_paid);
+        } else if (item.amount) {
+          // Third: amount field
+          amount = Number(item.amount);
+        }
+        
+        return {
+          id: item.id ?? Math.random().toString(36).substr(2, 9),
+          backendId: item.id,
+          invoiceNumber:
+            item.invoice_number ??
+            (item.id ? `INV-${String(item.id).slice(0, 8).toUpperCase()}` : `INV-${Date.now()}`),
+          memberId: item.member_id ?? item.Member?.id,
+          memberName: item.Member?.name || item.member_name || "Unknown",
+          memberEmail: item.Member?.email || item.member_email || "N/A",
+          amount: isNaN(amount) ? 0 : amount,
+          dueDate: item.end_date ?? item.due_date ?? new Date().toISOString(),
+          issueDate: item.start_date ?? item.issue_date ?? new Date().toISOString(),
+          status:
+            item.payment_status === "paid" || item.status === "paid" || item.status === "active"
+              ? "paid"
+              : item.status === "expired" || item.payment_status === "unpaid"
+              ? "pending"
+              : "pending",
+          lateFee: Number(item.late_fee ?? 0),
+          planType: item.Membership?.name ?? item.membership_name ?? item.plan_type ?? "N/A",
+        };
+      });
 
       setInvoices(formatted);
 

@@ -23,6 +23,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [password, setPassword] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
+  // NEW: identifier type (email | phone)
+  const [identifierType, setIdentifierType] = useState<"email" | "phone">("email");
+  const [identifierError, setIdentifierError] = useState<string | null>(null);
+
   // show/hide password states
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [showFpNewPassword, setShowFpNewPassword] = useState<boolean>(false);
@@ -38,9 +42,64 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [fpConfirmPassword, setFpConfirmPassword] = useState<string>("");
   const [fpLoading, setFpLoading] = useState<boolean>(false);
 
+  // Helpers: validation
+  const validateEmail = (value: string) => {
+    // simple, reasonable email regex
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return re.test(value.trim());
+  };
+
+  const validatePhone = (value: string) => {
+    // allow + and digits, but check digit count between 10 and 15
+    const cleaned = value.replace(/[^\d]/g, "");
+    return cleaned.length >= 10 && cleaned.length <= 15;
+  };
+
+  const handleIdentifierChange = (val: string) => {
+    setIdentifier(val);
+    // live validation feedback (non-intrusive)
+    if (!val) {
+      setIdentifierError(null);
+      return;
+    }
+    if (identifierType === "email") {
+      setIdentifierError(validateEmail(val) ? null : "Enter a valid email address");
+    } else {
+      setIdentifierError(validatePhone(val) ? null : "Enter a valid phone number (10-15 digits)");
+    }
+  };
+
+  const handleIdentifierTypeChange = (type: "email" | "phone") => {
+    setIdentifierType(type);
+    // clear identifier + errors when switching type (safer)
+    setIdentifier("");
+    setIdentifierError(null);
+  };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
+
+    // Validation before sending request
+    if (!identifier) {
+      toast.error(identifierType === "email" ? "Please enter your email" : "Please enter your phone number");
+      setIsLoading(false);
+      return;
+    }
+
+    if (identifierType === "email") {
+      if (!validateEmail(identifier)) {
+        toast.error("Please enter a valid email address");
+        setIsLoading(false);
+        return;
+      }
+    } else {
+      if (!validatePhone(identifier)) {
+        toast.error("Please enter a valid phone number (10-15 digits)");
+        setIsLoading(false);
+        return;
+      }
+    }
 
     try {
       const response = await authService.login(identifier, password);
@@ -272,16 +331,37 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-3">
+                {/* NEW: selector for email or phone */}
+                <div className="flex gap-2 items-center justify-center">
+                  <button
+                    type="button"
+                    aria-pressed={identifierType === "email"}
+                    onClick={() => handleIdentifierTypeChange("email")}
+                    className={`px-3 py-1 rounded-md text-sm border ${identifierType === "email" ? "bg-muted-foreground/10 border-muted-foreground" : "border-border/50"}`}
+                  >
+                    Email
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={identifierType === "phone"}
+                    onClick={() => handleIdentifierTypeChange("phone")}
+                    className={`px-3 py-1 rounded-md text-sm border ${identifierType === "phone" ? "bg-muted-foreground/10 border-muted-foreground" : "border-border/50"}`}
+                  >
+                    Phone
+                  </button>
+                </div>
+
                 <div className="space-y-2">
-                  <Label htmlFor="identifier">Email or Phone</Label>
+                  <Label htmlFor="identifier">{identifierType === "email" ? "Email" : "Phone"}</Label>
                   <Input
                     id="identifier"
                     type="text"
-                    placeholder="owner@example.com or 9876543210"
+                    placeholder={identifierType === "email" ? "owner@example.com" : "9876543210 or +919876543210"}
                     value={identifier}
-                    onChange={(e) => setIdentifier(e.target.value)}
+                    onChange={(e) => handleIdentifierChange(e.target.value)}
                     required
                   />
+                  {identifierError ? <p className="text-xs text-red-500 mt-1">{identifierError}</p> : null}
                 </div>
 
                 <div className="space-y-2">

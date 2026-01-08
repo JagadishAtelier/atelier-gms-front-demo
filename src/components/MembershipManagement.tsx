@@ -36,6 +36,7 @@ interface Member {
   name: string;
   email: string;
   phone: string;
+  member_no?: string;
   planType?: string;
   startDate?: string;
   endDate?: string;
@@ -70,7 +71,6 @@ function useDevice() {
   }, [isBrowser]);
 
   const isMobile = width <= 640; // phones
-  // keep same breakpoints but consider tablets to be narrower styling wise
   const isTablet = width > 640 && width < 1024; // tablets
   const isDesktop = width >= 1024;
 
@@ -96,10 +96,10 @@ export function MembershipManagement() {
     gender: '',
     dob: '',
     notes: '',
-    // measurement fields
-    height: '', // in cm
-    weight: '', // in kg
-    measurementDate: '', // yyyy-mm-dd
+    address: '',
+    height: '',
+    weight: '',
+    measurementDate: '',
   });
 
   // profile / billing states
@@ -137,13 +137,21 @@ export function MembershipManagement() {
   const [assignLoading, setAssignLoading] = useState(false);
   const [activeMembershipInfo, setActiveMembershipInfo] = useState<any | null>(null);
 
+  // NEW assign-related fields requested by user:
+  // membership_name derived from selectedMembershipId
+  const [assignMembershipName, setAssignMembershipName] = useState<string>('');
+  // payment_type enum
+  const [assignPaymentType, setAssignPaymentType] = useState<'cash' | 'card' | 'online' | 'upi'>('cash');
+  // amount_paid input (string to allow empty/partial)
+  const [assignAmountPaid, setAssignAmountPaid] = useState<string>('0');
+  // pending amount auto-calculated
+  const [assignPendingAmount, setAssignPendingAmount] = useState<number | null>(null);
+
   // Reminder loading state (billing-only)
   const [sendingMemberReminder, setSendingMemberReminder] = useState<string | null>(null);
 
   // --- Attendance states ---
-  // map of memberId -> today's attendance record (if any)
   const [todayAttendanceMap, setTodayAttendanceMap] = useState<Record<string, any>>({});
-  // processing flags for per-member attendance actions
   const [attendanceProcessing, setAttendanceProcessing] = useState<Record<string, boolean>>({});
 
   // --- Bulk upload states (NEW) ---
@@ -152,6 +160,18 @@ export function MembershipManagement() {
 
   // --- ref for bulk input (fixes button not opening file picker) ---
   const bulkInputRef = useRef<HTMLInputElement | null>(null);
+
+  // --- Payment/pending related states (NEW) ---
+  const [pendingMap, setPendingMap] = useState<Record<string, any>>({});
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [paymentMember, setPaymentMember] = useState<Member | null>(null);
+  const [paymentSelectedMembershipId, setPaymentSelectedMembershipId] = useState<string | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState<string>(''); // amount to pay (incremental)
+  const [paymentLoading, setPaymentLoading] = useState(false);
+
+  // --- Next payment map (new) ---
+  const [nextPaymentMap, setNextPaymentMap] = useState<Record<string, string | null>>({});
+  const [nextPaymentLoading, setNextPaymentLoading] = useState<Record<string, boolean>>({});
 
   // --- Helpers to normalize various response shapes ---
   const extractListFromResponse = (res: any): any[] => {
@@ -195,7 +215,6 @@ export function MembershipManagement() {
 
     const status: Member['status'] = isActive ? 'active' : (item.status as Member['status'] || 'expired');
 
-    // determine DOB (try common fields)
     const dobRaw = item.dob || item.DOB || item.date_of_birth || item.dateOfBirth || null;
     const dobIso = dobRaw ? (typeof dobRaw === 'string' ? dobRaw : (dobRaw instanceof Date ? dobRaw.toISOString() : String(dobRaw))) : undefined;
     const age = dobIso ? calculateAge(dobIso) : undefined;
@@ -205,6 +224,7 @@ export function MembershipManagement() {
       name: item.name || item.full_name || 'Unknown',
       email: item.email || '',
       phone: item.phone || '',
+      member_no: item.member_no || item.memberNo || item.member_number || undefined,
       startDate,
       endDate,
       status,
@@ -222,7 +242,7 @@ export function MembershipManagement() {
       workout_batch: item.workout_batch || item.workoutBatch || undefined,
       gender: item.gender || undefined,
       dob: dobIso,
-      age // <-- attached computed age
+      age
     };
   };
 
@@ -244,6 +264,58 @@ export function MembershipManagement() {
     }
   };
 
+  // --- Fetch pending amount for a single member ---
+  const fetchPendingForMember = async (memberId: string, includeInactive = false) => {
+    try {
+      const res = await membermembershipService.getPendingAmountByMemberId(memberId, includeInactive);
+      // service returns a shape like { member_id, total_pending_amount, memberships }
+      const payload = res?.data || res;
+      setPendingMap(prev => ({ ...prev, [memberId]: payload }));
+      return payload;
+    } catch (err) {
+      console.warn('Failed to fetch pending for member', memberId, err);
+      setPendingMap(prev => ({ ...prev, [memberId]: { member_id: memberId, total_pending_amount: 0, memberships: [] } }));
+      return { member_id: memberId, total_pending_amount: 0, memberships: [] };
+    }
+  };
+
+  // --- Fetch next payment date for a single member ---
+  const fetchNextPaymentForMember = async (memberId: string) => {
+    try {
+      setNextPaymentLoading(prev => ({ ...prev, [memberId]: true }));
+      const res = await membermembershipService.getNextPaymentDateByMemberId(memberId);
+      const payload = res?.data || res;
+      // flexibly pick possible fields
+      const dateStr =
+        payload?.next_payment_date ||
+        payload?.nextPaymentDate ||
+        payload?.next_payment ||
+        payload?.nextPayment ||
+        null;
+      setNextPaymentMap(prev => ({ ...prev, [memberId]: dateStr }));
+      return dateStr;
+    } catch (err) {
+      console.warn('Failed to fetch next payment for member', memberId, err);
+      setNextPaymentMap(prev => ({ ...prev, [memberId]: null }));
+      return null;
+    } finally {
+      setNextPaymentLoading(prev => ({ ...prev, [memberId]: false }));
+    }
+  };
+
+  // --- Fetch pending & next-payment for all currently visible (filtered) members ---
+  const fetchPendingForVisibleMembers = async () => {
+    try {
+      const visible = filteredMembers; // computed below
+      if (!Array.isArray(visible) || visible.length === 0) return;
+      // fetch both pending and next-payment concurrently for visible (limit to first 200)
+      const first = visible.slice(0, 200);
+      await Promise.all(first.map(m => Promise.all([fetchPendingForMember(m.id), fetchNextPaymentForMember(m.id)])));
+    } catch (err) {
+      console.warn('Failed to fetch pending / next payment for visible members', err);
+    }
+  };
+
   // --- Fetch todays attendances (extracted so we can refresh after sign in/out) ---
   const fetchTodays = async () => {
     try {
@@ -252,7 +324,6 @@ export function MembershipManagement() {
       const to = new Date();
       to.setHours(23, 59, 59, 999);
 
-      // generic fetch for today's attendances (backend should support from_date/to_date)
       const res = await attendanceService.getAttendances({
         from_date: from.toISOString(),
         to_date: to.toISOString(),
@@ -266,7 +337,6 @@ export function MembershipManagement() {
       });
       setTodayAttendanceMap(map);
     } catch (err) {
-      // If single-member API exists, that's fine; we still silently fail here.
       console.warn('Failed to fetch today attendances', err);
     }
   };
@@ -278,6 +348,29 @@ export function MembershipManagement() {
       await fetchTodays();
     })();
   }, []);
+
+  // --- When members or filters/search change, fetch pending for visible members and next payments ---
+  useEffect(() => {
+    // debounce-ish / simple: fetch when members/search/filter change
+    (async () => {
+      try {
+        // small optimization: only fetch for first 200 members visible
+        const visible = members
+          .filter(member => {
+            const matchesSearch =
+              member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              (member.email || '').toLowerCase().includes(searchTerm.toLowerCase());
+            const matchesFilter = selectedFilter === 'all' || member.status === selectedFilter;
+            return matchesSearch && matchesFilter;
+          })
+          .slice(0, 200);
+        await Promise.all(visible.map(m => Promise.all([fetchPendingForMember(m.id), fetchNextPaymentForMember(m.id)])));
+      } catch (err) {
+        console.warn('Error fetching pending/next-payment for members', err);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [members, searchTerm, selectedFilter]);
 
   // --- Load membership plans ---
   useEffect(() => {
@@ -322,14 +415,10 @@ export function MembershipManagement() {
     setAttendanceProcessingFlag(member.id, true);
     try {
       const payload = { member_id: member.id, sign_in: new Date().toISOString() };
-      // prefer signIn helper
       const res = await attendanceService.signIn(payload);
-      // update map with returned attendance record (normalize id key)
       const memberKey = String(member.id);
       setTodayAttendanceMap(prev => ({ ...prev, [memberKey]: res || payload }));
       toast.success('Signed in');
-
-      // refresh entire table (members + today's attendances)
       await fetchMembers();
       await fetchTodays();
     } catch (err: any) {
@@ -345,19 +434,14 @@ export function MembershipManagement() {
     setAttendanceProcessingFlag(member.id, true);
     try {
       const payload = { member_id: member.id, sign_out: new Date().toISOString() };
-      // prefer signOut helper
       const res = await attendanceService.signOut(payload);
-      // update today's attendance map: merge sign_out into existing record if any
       const memberKey = String(member.id);
       setTodayAttendanceMap(prev => {
         const prevRec = prev[memberKey] || {};
-        // res might be the updated record; merge it. if res is null, fallback to adding sign_out
         const updated = res && typeof res === 'object' ? { ...prevRec, ...res } : { ...prevRec, sign_out: payload.sign_out };
         return { ...prev, [memberKey]: updated };
       });
       toast.success('Signed out');
-
-      // refresh entire table (members + today's attendances)
       await fetchMembers();
       await fetchTodays();
     } catch (err: any) {
@@ -380,13 +464,10 @@ export function MembershipManagement() {
 
     try {
       const res = await memberService.bulkUpload(file);
-      // expect { success: [...], failed: [...] }
       const success = res?.success || [];
       const failed = res?.failed || [];
       setBulkResult({ success, failed });
       toast.success(`Bulk upload finished succeeded`);
-
-      // refresh members and today's attendances so UI reflects new rows
       await fetchMembers();
       await fetchTodays();
     } catch (err: any) {
@@ -402,7 +483,6 @@ export function MembershipManagement() {
     const file = e.target.files?.[0] || null;
     if (!file) return;
     await handleBulkUpload(file);
-    // clear input so same file can be reselected if needed
     e.currentTarget.value = '';
   };
 
@@ -413,7 +493,6 @@ export function MembershipManagement() {
       return;
     }
 
-    // build headers union
     const headersSet = new Set<string>();
     failedRows.forEach(r => {
       if (r && typeof r === 'object') {
@@ -429,9 +508,7 @@ export function MembershipManagement() {
         let cell = row[h];
         if (cell === null || typeof cell === 'undefined') return '';
         if (typeof cell === 'object') cell = JSON.stringify(cell);
-        // escape quotes and commas
         const cellStr = String(cell).replace(/"/g, '""');
-        // wrap in quotes if contains comma or newline
         return (/,|\n/.test(cellStr) ? `"${cellStr}"` : cellStr);
       }).join(',');
       csvLines.push(line);
@@ -460,13 +537,14 @@ export function MembershipManagement() {
         email: newMember.email,
         phone: newMember.phone || undefined,
         gender: newMember.gender || undefined,
-        dob: newMember.dob ? new Date(newMember.dob).toISOString() : undefined, // ensure dob is sent
+        dob: newMember.dob ? new Date(newMember.dob).toISOString() : undefined,
         join_date: newMember.joinDate ? new Date(newMember.joinDate).toISOString() : undefined,
         start_date: newMember.startDate ? new Date(newMember.startDate).toISOString() : undefined,
         workout_batch: newMember.batch || undefined,
         image_url: newMember.photo || undefined,
         is_active: typeof newMember.is_active !== 'undefined' ? newMember.is_active : true,
-        notes: newMember.notes || undefined
+        notes: newMember.notes || undefined,
+        address: newMember.address || undefined
       };
 
       Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
@@ -476,20 +554,17 @@ export function MembershipManagement() {
       const mapped = mapBackendToMember(createdItem);
       setMembers((prev) => [...prev, mapped]);
 
-      // --- NEW: create initial measurement if height or weight provided ---
       const hasMeasurement = (newMember.height && newMember.height !== '') || (newMember.weight && newMember.weight !== '');
       if (hasMeasurement) {
         try {
           const measurementPayload: any = {
             member_id: createdItem.id,
-            // only include numeric values if provided
             height: newMember.height ? Number(newMember.height) : undefined,
             weight: newMember.weight ? Number(newMember.weight) : undefined,
             measurement_date: newMember.measurementDate && newMember.measurementDate !== ''
               ? new Date(newMember.measurementDate).toISOString()
               : new Date().toISOString()
           };
-          // remove undefined keys
           Object.keys(measurementPayload).forEach(k => measurementPayload[k] === undefined && delete measurementPayload[k]);
 
           await membermeasurementService.createMemberMeasurement(measurementPayload);
@@ -515,6 +590,7 @@ export function MembershipManagement() {
         gender: '',
         dob: '',
         notes: '',
+        address: '',
         height: '',
         weight: '',
         measurementDate: '',
@@ -565,7 +641,6 @@ export function MembershipManagement() {
       Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
 
       await memberService.updateMember(editedMember.id, payload);
-      // recalc age after update if dob changed
       const newAge = editedMember.dob ? calculateAge(editedMember.dob) : editedMember.age;
       setMembers((prev) => prev.map((m) => (m.id === editedMember.id ? { ...m, ...editedMember, age: newAge } : m)));
       setSelectedMember(editedMember);
@@ -586,6 +661,8 @@ export function MembershipManagement() {
       await memberService.deleteMember(id);
       setMembers((prev) => prev.map((m) => (m.id === id ? { ...m, is_active: false, status: 'expired' } : m)));
       toast.success('Member deactivated');
+      // refresh pending map for this member
+      setPendingMap(prev => ({ ...prev, [id]: { member_id: id, total_pending_amount: 0, memberships: [] } }));
     } catch (err: any) {
       console.error('Delete member failed', err);
       toast.error(err?.message || 'Failed to delete member');
@@ -600,6 +677,8 @@ export function MembershipManagement() {
       await memberService.restoreMember(id);
       setMembers((prev) => prev.map((m) => (m.id === id ? { ...m, is_active: true, status: 'active' } : m)));
       toast.success('Member restored');
+      await fetchPendingForMember(id);
+      await fetchNextPaymentForMember(id);
     } catch (err: any) {
       console.error('Restore failed', err);
       toast.error(err?.message || 'Failed to restore member');
@@ -642,7 +721,6 @@ export function MembershipManagement() {
   // --- Fetch latest membership for assign dialog (prefers active membership) ---
   const fetchLatestMembershipForMember = async (memberId: string) => {
     try {
-      // try active first
       const activeRes = await membermembershipService.getActiveMembershipsByMemberId(memberId);
       const activeList = extractListFromResponse(activeRes);
       if (Array.isArray(activeList) && activeList.length > 0) {
@@ -656,7 +734,6 @@ export function MembershipManagement() {
         }
       }
 
-      // fallback: all memberships
       const allRes = await membermembershipService.getAllMembershipsByMemberId(memberId);
       const allList = extractListFromResponse(allRes);
       if (!Array.isArray(allList) || allList.length === 0) return { latest: null, source: 'none' };
@@ -682,6 +759,12 @@ export function MembershipManagement() {
     setAssignPaymentStatus('paid');
     setAssignStatus('active');
     setActiveMembershipInfo(null);
+
+    // reset new assign fields
+    setAssignMembershipName('');
+    setAssignPaymentType('cash');
+    setAssignAmountPaid('0');
+    setAssignPendingAmount(null);
 
     const today = new Date();
     let computedStart = today;
@@ -711,6 +794,38 @@ export function MembershipManagement() {
     setAssignEnd(formatDateYYYYMMDD(defaultEnd));
     setIsAssignOpen(true);
   };
+
+  // --- When selectedMembershipId changes, update membership_name and pending calculation ---
+  useEffect(() => {
+    if (!selectedMembershipId) {
+      setAssignMembershipName('');
+      setAssignPendingAmount(null);
+      return;
+    }
+    const selectedPlan = membershipOptions.find((m: any) => String(m.id) === String(selectedMembershipId));
+    const planName = selectedPlan?.name || selectedPlan?.membership_name || '';
+    setAssignMembershipName(planName);
+
+    const planPrice = Number(selectedPlan?.price ?? selectedPlan?.amount ?? selectedPlan?.membership_price ?? 0) || 0;
+    const paid = Number(assignAmountPaid || 0) || 0;
+    const pending = Math.max(0, planPrice - paid);
+    setAssignPendingAmount(pending);
+
+    // auto choose payment_status: if fully paid then 'paid' else 'unpaid'
+    setAssignPaymentStatus(paid >= planPrice ? 'paid' : 'unpaid');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMembershipId, membershipOptions]);
+
+  // --- When assignAmountPaid changes, recalc pending based on selected plan ---
+  useEffect(() => {
+    const selectedPlan = membershipOptions.find((m: any) => String(m.id) === String(selectedMembershipId));
+    const planPrice = Number(selectedPlan?.price ?? selectedPlan?.amount ?? selectedPlan?.membership_price ?? 0) || 0;
+    const paid = Number(assignAmountPaid || 0) || 0;
+    const pending = Math.max(0, planPrice - paid);
+    setAssignPendingAmount(pending);
+    setAssignPaymentStatus(paid >= planPrice ? 'paid' : 'unpaid');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignAmountPaid]);
 
   // --- Auto-calc assignEnd based on selected plan's duration_months ---
   useEffect(() => {
@@ -761,14 +876,32 @@ export function MembershipManagement() {
 
     try {
       setAssignLoading(true);
+
+      // determine plan price for pending calculations
+      const selectedPlan = membershipOptions.find((m: any) => String(m.id) === String(selectedMembershipId));
+      const planPrice = Number(selectedPlan?.price ?? selectedPlan?.amount ?? selectedPlan?.membership_price ?? 0) || 0;
+      const paid = Number(assignAmountPaid || 0) || 0;
+      const pending = Math.max(0, planPrice - paid);
+
+      // compute payment_status automatically (also keep user's assignPaymentStatus fallback)
+      const computedPaymentStatus: 'paid' | 'unpaid' = paid >= planPrice ? 'paid' : 'unpaid';
+
+      // build payload including new fields
       const payload: any = {
         member_id: assignMember.id,
         membership_id: selectedMembershipId,
+        membership_name: assignMembershipName || (selectedPlan?.name ?? ''),
         start_date: new Date(assignStart).toISOString(),
         end_date: new Date(assignEnd).toISOString(),
-        payment_status: assignPaymentStatus,
-        status: assignStatus
+        payment_status: computedPaymentStatus,
+        status: assignStatus,
+        payment_type: assignPaymentType,
+        amount_paid: paid,
+        pending_amount: pending
       };
+
+      // strip undefined keys (if any)
+      Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
 
       await membermembershipService.createMemberMembership(payload);
       toast.success('Membership assigned successfully');
@@ -790,7 +923,6 @@ export function MembershipManagement() {
           }));
           setMemberMemberships(normalized);
 
-          // also re-evaluate active memberships
           const actRes = await membermembershipService.getActiveMembershipsByMemberId(billingMember.id);
           const actList = extractListFromResponse(actRes);
           setBillingHasActive(Array.isArray(actList) && actList.length > 0);
@@ -822,11 +954,9 @@ export function MembershipManagement() {
       setBillingHasActive(false);
       setBillingActiveItems([]);
 
-      // all memberships for this member (backend returns array of relations with Member & Membership included)
       const res = await membermembershipService.getAllMembershipsByMemberId(member.id);
       const list = extractListFromResponse(res);
 
-      // normalize items and keep raw for later calculations
       const normalized = list.map((itm: any) => ({
         id: itm.id,
         membership_name: itm.Membership?.name || itm.membership?.name || itm.membership_name || (itm.membership_id || ''),
@@ -836,16 +966,13 @@ export function MembershipManagement() {
         status: itm.status || null,
         createdAt: itm.createdAt || itm.created_at || itm.createdAt || null,
         Membership: itm.Membership || itm.membership || null,
+        amount_paid: itm.amount_paid || itm.amountPaid || null,
         raw: itm
       }));
       setMemberMemberships(normalized);
 
-      // --- Compute current plan, last payment, amount, next billing ---
-
-      // 1) active memberships (status === 'active' or raw.is_active true)
       const activeList = normalized.filter((n) => (n.raw?.status === 'active' || n.raw?.is_active === true));
 
-      // pick the active membership with the highest end_date (latest end)
       const parseDate = (s: string | null) => (s ? new Date(s) : null);
       const withParsedEnd = activeList
         .map((a) => ({ ...a, parsedEnd: parseDate(a.end_date) }))
@@ -856,7 +983,6 @@ export function MembershipManagement() {
         withParsedEnd.sort((a, b) => b.parsedEnd!.getTime() - a.parsedEnd!.getTime());
         currentPlanName = withParsedEnd[0].Membership?.name || withParsedEnd[0].membership_name || null;
       } else {
-        // fallback: use most recently created membership's plan if no active
         const mostRecent = normalized
           .slice()
           .filter(n => n.createdAt)
@@ -864,7 +990,6 @@ export function MembershipManagement() {
         currentPlanName = mostRecent?.Membership?.name || mostRecent?.membership_name || null;
       }
 
-      // 2) last payment: pick the latest record with payment_status === 'paid' by createdAt
       const paidList = normalized
         .filter((n) => (n.payment_status === 'paid' || n.raw?.payment_status === 'paid'))
         .filter(n => n.createdAt);
@@ -876,37 +1001,38 @@ export function MembershipManagement() {
         lastPaymentDate = null;
       }
 
-      // 3) amount: use latest created membership's Membership.price if available
       const latestCreated = normalized
         .slice()
         .filter(n => n.createdAt)
         .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())[0];
       let amountVal: number | undefined = undefined;
+      
       if (latestCreated?.Membership?.price) {
         const p = Number(latestCreated.Membership.price);
+        amountVal = isNaN(p) ? undefined : p;
+      } else if (latestCreated?.raw?.amount_paid) {
+        const p = Number(latestCreated.raw.amount_paid);
         amountVal = isNaN(p) ? undefined : p;
       } else if (latestCreated?.raw?.amount) {
         const p = Number(latestCreated.raw.amount);
         amountVal = isNaN(p) ? undefined : p;
+      } else {
+        amountVal = member.amount;
       }
 
-      // 4) next billing: compute the highest end_date across all memberships, then +1 day
       const allParsedEnds = normalized
         .map(n => parseDate(n.end_date))
         .filter((d): d is Date => d instanceof Date && !isNaN(d.getTime()));
       let nextBillingDateISO: string | null = null;
       if (allParsedEnds.length > 0) {
-        // get max end date
         const maxEnd = allParsedEnds.reduce((max, cur) => (cur.getTime() > max.getTime() ? cur : max), allParsedEnds[0]);
         const nextBill = addDays(maxEnd, 1);
         nextBillingDateISO = nextBill.toISOString();
       }
 
-      // update billing active flags
       setBillingHasActive(activeList.length > 0);
       setBillingActiveItems(activeList);
 
-      // update billingMember fields so the UI shows them
       setBillingMember((prev) => (({
         ...(prev || member),
         planType: currentPlanName || (prev?.planType ?? ''),
@@ -933,10 +1059,9 @@ export function MembershipManagement() {
     }
     try {
       setSendingMemberReminder(memberId);
-      const res = await remainderemailService.sendNextPaymentReminder(memberId); // <-- ensure this exists in service
+      const res = await remainderemailService.sendNextPaymentReminder(memberId);
       toast.success(res?.message || 'Payment reminder sent');
 
-      // refresh billing panel data for this member if it is open
       if (billingMember && billingMember.id === memberId) {
         await handleViewBilling(billingMember);
       }
@@ -949,10 +1074,65 @@ export function MembershipManagement() {
   };
 
   const handleUpdatePayment = () => {
-    // This is a mock action. Replace with real payment flow.
     console.log('Process payment for:', billingMember?.name);
     setIsBillingOpen(false);
     toast.success('Payment processed (mock)');
+  };
+
+  // --- Payment modal handlers (NEW) ---
+  const openPaymentModal = async (member: Member) => {
+    setPaymentMember(member);
+    const info = pendingMap[member.id] || await fetchPendingForMember(member.id);
+    setPaymentSelectedMembershipId(
+      (info?.memberships && info.memberships.find((m: any) => m.pending_amount > 0)?.member_membership_id) ||
+      (info?.memberships && info.memberships[0]?.member_membership_id) ||
+      null
+    );
+    setPaymentAmount(''); // reset
+    setIsPaymentModalOpen(true);
+  };
+
+  const closePaymentModal = () => {
+    setIsPaymentModalOpen(false);
+    setPaymentMember(null);
+    setPaymentSelectedMembershipId(null);
+    setPaymentAmount('');
+  };
+
+  const handleSubmitPayment = async () => {
+    if (!paymentMember || !paymentSelectedMembershipId) {
+      toast.error('Select a membership to apply payment');
+      return;
+    }
+    const amt = Number(paymentAmount);
+    if (isNaN(amt) || amt <= 0) {
+      toast.error('Enter a valid amount');
+      return;
+    }
+
+    try {
+      setPaymentLoading(true);
+      // updateMemberMembership expects incremental payment in amount_paid field per backend design
+      await membermembershipService.updateMemberMembership(paymentSelectedMembershipId, { amount_paid: amt });
+      toast.success('Payment recorded');
+
+      // refresh pending for this member and overall members list
+      await fetchPendingForMember(paymentMember.id);
+      await fetchNextPaymentForMember(paymentMember.id);
+      await fetchMembers();
+
+      // if billing panel open for this member, refresh it
+      if (billingMember && billingMember.id === paymentMember.id) {
+        await handleViewBilling(billingMember);
+      }
+
+      closePaymentModal();
+    } catch (err: any) {
+      console.error('Payment update failed', err);
+      toast.error(err?.message || 'Failed to process payment');
+    } finally {
+      setPaymentLoading(false);
+    }
   };
 
   // search & filter
@@ -964,6 +1144,38 @@ export function MembershipManagement() {
     return matchesSearch && matchesFilter;
   });
 
+  // new payment badge (replaces original status badge cell)
+  const getPaymentBadgeForMember = (member: Member) => {
+    const pendingInfo = pendingMap[member.id];
+    const totalPending = (pendingInfo && (typeof pendingInfo.total_pending_amount !== 'undefined' ? Number(pendingInfo.total_pending_amount) : undefined)) ?? undefined;
+
+    const smallBadgeClass = isTablet ? 'px-1 py-0.5 text-[11px]' : 'px-2 py-0.5 text-sm';
+    if (typeof totalPending === 'undefined') {
+      // unknown -> show original status with subdued outline to avoid layout shift
+      return <Badge variant="outline" className={smallBadgeClass}>Loading</Badge>;
+    }
+
+    if (Number(totalPending) <= 0) {
+      return <Badge className={`bg-neon-green/10 text-neon-green border-neon-green/20 ${smallBadgeClass}`}>Paid</Badge>;
+    }
+
+    // Pending -> show badge + action button
+    return (
+      <div className="flex items-center gap-2">
+        <Badge className={`bg-yellow-50 text-yellow-600 border-yellow-200 ${smallBadgeClass}`}>Pending</Badge>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={`text-yellow-700 hover:bg-yellow-50 ${isTablet ? 'px-2 py-1 text-sm' : ''}`}
+          onClick={() => openPaymentModal(member)}
+        >
+          Pay
+        </Button>
+      </div>
+    );
+  };
+
+  // getStatusBadge (kept for profile modal)
   const getStatusBadge = (status: string) => {
     const smallBadgeClass = isTablet ? 'px-1 py-0.5 text-[11px]' : 'px-2 py-0.5 text-sm';
     switch (status) {
@@ -986,7 +1198,6 @@ export function MembershipManagement() {
   };
 
   // ----- responsive classes (compact tablet tuning) -----
-  // I've tightened spacing and font sizes for tablet to get a denser, "perfect" tablet look.
   const pagePadding = isTablet ? 'px-3' : 'px-0';
   const headingClass = isTablet ? 'text-xl' : 'text-3xl';
   const subtitleClass = isTablet ? 'text-sm' : 'text-muted-foreground';
@@ -1057,13 +1268,11 @@ export function MembershipManagement() {
                     <Input value={newMember.phone} onChange={(e) => setNewMember({...newMember, phone: e.target.value})} />
                   </div>
 
-                  {/* DOB field added */}
                   <div>
                     <Label className={`${smallText}`}>Date of Birth</Label>
                     <Input type="date" value={newMember.dob} onChange={(e) => setNewMember({...newMember, dob: e.target.value})} />
                   </div>
 
-                  {/* Measurement fields added */}
                   <div>
                     <Label className={`${smallText}`}>Height (cm)</Label>
                     <Input type="number" value={newMember.height} onChange={(e) => setNewMember({...newMember, height: e.target.value})} />
@@ -1077,6 +1286,16 @@ export function MembershipManagement() {
                     <Label className={`${smallText}`}>Measurement Date</Label>
                     <Input type="date" value={newMember.measurementDate} onChange={(e) => setNewMember({...newMember, measurementDate: e.target.value})} />
                   </div>
+                </div>
+
+                <div>
+                  <Label className={`${smallText}`}>Address</Label>
+                  <Textarea 
+                    value={newMember.address} 
+                    onChange={(e) => setNewMember({...newMember, address: e.target.value})} 
+                    rows={2}
+                    placeholder="Enter full address"
+                  />
                 </div>
 
                 <div>
@@ -1144,6 +1363,59 @@ export function MembershipManagement() {
         </Card>
       )}
 
+      {/* Payment Modal (NEW) */}
+      <Dialog open={isPaymentModalOpen} onOpenChange={setIsPaymentModalOpen}>
+        <DialogContent className={`max-w-md w-[95vw] ${isTablet ? 'p-3' : 'p-4'}`}>
+          <DialogHeader>
+            <DialogTitle>Record Payment</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div>
+              <Label className={smallText}>Member</Label>
+              <div className="font-medium">{paymentMember?.name}</div>
+            </div>
+
+            <div>
+              <Label className={smallText}>Total Pending</Label>
+              <div className="font-semibold">
+                {paymentMember ? formatCurrencyINR(pendingMap[paymentMember.id]?.total_pending_amount ?? 0) : '—'}
+              </div>
+            </div>
+
+            <div>
+              <Label className={smallText}>Apply To Membership</Label>
+              <Select value={paymentSelectedMembershipId || ''} onValueChange={(v: any) => setPaymentSelectedMembershipId(v)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select membership (pending)"/>
+                </SelectTrigger>
+                <SelectContent>
+                  {(paymentMember && pendingMap[paymentMember.id]?.memberships?.length > 0 ? pendingMap[paymentMember.id].memberships : []).map((m: any) => (
+                    <SelectItem key={m.member_membership_id} value={m.member_membership_id}>
+                      {m.membership_name || m.membership_id} — {formatCurrencyINR(m.pending_amount)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className={smallText}>Amount to pay</Label>
+              <Input type="number" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} placeholder="Enter amount" />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <div className="flex gap-2 w-full">
+              <Button variant="outline" onClick={closePaymentModal}>Cancel</Button>
+              <Button onClick={handleSubmitPayment} className="bg-gradient-to-r from-neon-green to-neon-blue text-white" disabled={paymentLoading}>
+                {paymentLoading ? 'Saving...' : 'Apply Payment'}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Profile dialog */}
       <Dialog open={isProfileOpen} onOpenChange={setIsProfileOpen}>
         <DialogContent className={`max-w-[95vw] ${dialogMaxW} max-h-[90vh] overflow-y-auto`}>
@@ -1167,7 +1439,6 @@ export function MembershipManagement() {
                   <div className="flex items-center gap-2">
                     {getStatusBadge(selectedMember.status)}
                     <Badge variant="outline" className={isTablet ? 'text-xs' : ''}>{selectedMember.planType}</Badge>
-                    {/* show age if present */}
                     {selectedMember.age !== undefined ? (
                       <Badge className={`${isTablet ? 'text-xs' : 'text-sm'}`}>{selectedMember.age} yrs</Badge>
                     ) : null}
@@ -1208,8 +1479,7 @@ export function MembershipManagement() {
                 <div className="grid sm:grid-cols-2 gap-2">
                   <div>
                     <Label className={`${smallText}`}>Amount</Label>
-                    <p className={`${smallText} text-neon-green font-medium`}>{formatCurrencyINR(billingMember?.amount)}
-</p>
+                    <p className={`${smallText} text-neon-green font-medium`}>{formatCurrencyINR(selectedMember?.amount)}</p>
                   </div>
                   <div>
                     <Label className={`${smallText}`}>Start Date</Label>
@@ -1217,7 +1487,7 @@ export function MembershipManagement() {
                   </div>
                   <div>
                     <Label className={`${smallText}`}>End Date</Label>
-                    <p className={`${smallText} text-muted-foreground`}>{billingMember?.lastPayment ? formatPretty(billingMember.lastPayment) : 'N/A'}</p>
+                    <p className={`${smallText} text-muted-foreground`}>{selectedMember?.lastPayment ? formatPretty(selectedMember.lastPayment) : 'N/A'}</p>
                   </div>
                 </div>
               </div>
@@ -1236,7 +1506,17 @@ export function MembershipManagement() {
                 <Button onClick={handleSaveProfile} className="bg-gradient-to-r from-neon-green to-neon-blue text-white" disabled={loading}><Save className={`${iconClass} mr-2`} />Save Changes</Button>
               </div>
             ) : (
-              <Button variant="outline" onClick={() => setIsProfileOpen(false)}>Close</Button>
+              <div className="flex gap-2">
+                {/* Delete/Restore moved here from table actions */}
+                {selectedMember?.is_active === false || selectedMember?.status === 'expired' ? (
+                  <Button variant="ghost" size="sm" onClick={() => selectedMember && handleRestore(selectedMember.id)} className={`text-green-600 hover:bg-neon-green/10 ${isTablet ? 'px-2 py-1 text-sm' : ''}`}>Restore</Button>
+                ) : (
+                  <Button variant="ghost" size="sm" onClick={() => selectedMember && handleDelete(selectedMember.id)} className={`text-red-500 hover:bg-red-500/10 ${isTablet ? 'px-2 py-1' : ''}`}>
+                    Delete
+                  </Button>
+                )}
+                <Button variant="outline" onClick={() => setIsProfileOpen(false)}>Close</Button>
+              </div>
             )}
           </DialogFooter>
         </DialogContent>
@@ -1253,7 +1533,7 @@ export function MembershipManagement() {
           <div className={`grid gap-2 py-2 px-2`}>
             <div>
               <Label className={`${smallText}`}>Membership Plan</Label>
-              <Select value={selectedMembershipId} onValueChange={setSelectedMembershipId}>
+              <Select value={selectedMembershipId} onValueChange={(v: any) => setSelectedMembershipId(v)}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder={membershipOptionsLoading ? 'Loading...' : 'Select plan'} />
                 </SelectTrigger>
@@ -1276,6 +1556,46 @@ export function MembershipManagement() {
                 </div>
               </div>
             )}
+
+            {/* NEW: display membership_name, payment_type, amount_paid and pending_amount */}
+            <div className="grid sm:grid-cols-2 gap-2">
+              <div>
+                <Label className={`${smallText}`}>Membership Name</Label>
+                <Input value={assignMembershipName} readOnly placeholder="Selected membership name appears here" />
+              </div>
+
+              <div>
+                <Label className={`${smallText}`}>Payment Type</Label>
+                <Select value={assignPaymentType} onValueChange={(v: any) => setAssignPaymentType(v)}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cash">Cash</SelectItem>
+                    <SelectItem value="card">Card</SelectItem>
+                    <SelectItem value="online">Online</SelectItem>
+                    <SelectItem value="upi">UPI</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-2">
+              <div>
+                <Label className={`${smallText}`}>Amount Paid</Label>
+                <Input
+                  type="number"
+                  value={assignAmountPaid}
+                  onChange={(e) => setAssignAmountPaid(e.target.value)}
+                  placeholder="0"
+                />
+                <p className="text-xs text-muted-foreground mt-1">Enter the amount paid now. Pending amount will auto-update.</p>
+              </div>
+
+              <div>
+                <Label className={`${smallText}`}>Pending Amount</Label>
+                <Input value={assignPendingAmount !== null ? String(assignPendingAmount) : ''} readOnly />
+                <p className="text-xs text-muted-foreground mt-1">Auto-calculated: plan price minus amount paid.</p>
+              </div>
+            </div>
 
             <div className="grid grid-cols-2 gap-2">
               <div>
@@ -1389,17 +1709,12 @@ export function MembershipManagement() {
                     <p className={`${smallText} text-neon-green font-medium`}>{formatCurrencyINR(billingMember.amount)}</p>
                   </div>
                   <div>
-                    <Label className={`${smallText}`}>Last Payment</Label>
-                    <p className={`${smallText} text-muted-foreground`}>{billingMember.lastPayment ? formatPretty(billingMember.lastPayment) : 'N/A'}</p>
-                  </div>
-                  <div>
                     <Label className={`${smallText}`}>Next Billing</Label>
                     <p className={`${smallText} text-muted-foreground`}>{billingMember.nextBilling ? formatPretty(billingMember.nextBilling) : 'N/A'}</p>
                   </div>
                 </div>
               </div>
 
-              {/* Payment Status */}
               <div className="space-y-2">
                 <h4 className={`${isTablet ? 'font-medium text-sm' : 'font-medium'}`}>Payment Status</h4>
                 <div className="flex items-center justify-between p-2 border rounded-lg">
@@ -1419,7 +1734,6 @@ export function MembershipManagement() {
                 </div>
               </div>
 
-              {/* Quick Actions (Billing-only) */}
               <div className="space-y-2">
                 <h4 className={`${isTablet ? 'font-medium text-sm' : 'font-medium'}`}>Quick Actions</h4>
                 <div className="grid gap-2">
@@ -1437,9 +1751,6 @@ export function MembershipManagement() {
                     {sendingMemberReminder === billingMember?.id ? 'Sending...' : 'Send Payment Reminder'}
                   </Button>
 
-                  <Button variant="outline" className={`justify-start ${isTablet ? 'px-2 py-1 text-sm' : ''}`} onClick={() => console.log('Update billing date for:', billingMember.name)}>
-                    <Calendar className={`${iconClass} mr-2`} />Update Billing Date
-                  </Button>
                 </div>
               </div>
             </div>
@@ -1452,7 +1763,6 @@ export function MembershipManagement() {
         </DialogContent>
       </Dialog>
 
-      {/* Search & Filter */}
       <Card className="border-border/50">
         <CardContent className={`${cardPadding}`}>
           <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
@@ -1478,7 +1788,6 @@ export function MembershipManagement() {
         </CardContent>
       </Card>
 
-      {/* Members table */}
       <Card className="border-border/50">
         <CardHeader className={`${isTablet ? 'px-3 py-2' : ''}`}>
           <CardTitle className={`${isTablet ? 'text-lg' : ''}`}>Members ({filteredMembers.length})</CardTitle>
@@ -1490,10 +1799,11 @@ export function MembershipManagement() {
             <Table>
               <TableHeader>
                 <TableRow className={`${isTablet ? '' : ''}`}>
+                  <TableHead>Member No</TableHead>
                   <TableHead>Member</TableHead>
                   <TableHead className="hidden sm:table-cell">Contact</TableHead>
-                  <TableHead className="hidden md:table-cell">Period</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead className="hidden md:table-cell">Next Payment</TableHead>
+                  <TableHead>Payment</TableHead>
                   <TableHead className="text-center">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1501,10 +1811,16 @@ export function MembershipManagement() {
                 {filteredMembers.map((member) => (
                   <TableRow key={member.id} className={`${isTablet ? '' : ''}`}>
                     <TableCell>
-                      <div className={`flex items-center gap-3 ${tableRowPadding}`}>
-                        <div className={`${avatarSizeClass} bg-gradient-to-r from-neon-green to-neon-blue rounded-full flex items-center justify-center text-white`}>
-                          {member.name.charAt(0)}
+                      <div className={`${tableRowPadding}`}>
+                        <div className={`${isTablet ? 'text-xs font-medium' : 'text-sm font-medium'}`}>
+                          {member.member_no || '—'}
                         </div>
+                      </div>
+                    </TableCell>
+                    
+                    <TableCell>
+                      <div className={`flex items-center gap-3 ${tableRowPadding}`}>
+                        <div className={`${avatarSizeClass} bg-gradient-to-r from-neon-green to-neon-blue rounded-full flex items-center justify-center text-white`}>{member.name.charAt(0)}</div>
                         <div>
                           <div className={`${isTablet ? 'font-medium text-sm' : 'font-medium'}`}>{member.name}</div>
                           <div className={`text-sm text-muted-foreground sm:hidden ${isTablet ? 'text-xs' : ''}`}>{member.email}{member.age !== undefined ? ` • ${member.age} yrs` : ''}</div>
@@ -1519,94 +1835,29 @@ export function MembershipManagement() {
                       </div>
                     </TableCell>
 
+                    {/* Next Payment column (replaces previous Period column) */}
                     <TableCell className="hidden md:table-cell">
                       <div className="space-y-1">
-                        <div className={`${smallText}`}>{member.startDate ? new Date(member.startDate).toLocaleDateString() : 'N/A'}</div>
+                        {nextPaymentLoading[member.id] ? (
+                          <div className={`${smallText} text-muted-foreground`}>Loading...</div>
+                        ) : nextPaymentMap[member.id] ? (
+                          <div className={`${smallText}`}>{formatPretty(nextPaymentMap[member.id])}</div>
+                        ) : (
+                          <div className={`${smallText} text-muted-foreground`}>N/A</div>
+                        )}
                       </div>
                     </TableCell>
 
-                    <TableCell>{getStatusBadge(member.status)}</TableCell>
+                    {/* Payment status column (replaces previous status column) */}
+                    <TableCell>{getPaymentBadgeForMember(member)}</TableCell>
 
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2 items-center">
                         <Button variant="ghost" size="sm" onClick={() => handleViewProfile(member)} className={`hover:bg-neon-green/10 hover:text-neon-green ${isTablet ? 'px-2 py-1' : ''}`}><User className={`${iconClass}`} /></Button>
 
                         <Button variant="ghost" size="sm" onClick={() => handleViewBilling(member)} className={`hover:bg-neon-blue/10 hover:text-neon-blue ${isTablet ? 'px-2 py-1' : ''}`}><CreditCard className={`${iconClass}`} /></Button>
-                        <Button
-                                variant="ghost"
-                                size="sm"
-                                // onClick={() => handleSignIn(member)}
-                                className={`${isTablet ? 'px-2 py-1 text-sm' : ''} text-green-600 hover:bg-neon-green/10`}
-                                // disabled={processing}
-                                title="Sign in for today"
-                              >
-                                {'Sign In'}
-                              </Button>
 
-                        {/* Attendance action: Sign In / Doing workout (click -> Sign Out) / Attended */}
-                        {/* {(() => {
-                          const att = todayAttendanceMap[String(member.id)];
-                          const processing = Boolean(attendanceProcessing[String(member.id)]);
-                         
-                          if (!att) {
-                            return (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleSignIn(member)}
-                                className={`${isTablet ? 'px-2 py-1 text-sm' : ''} text-green-600 hover:bg-neon-green/10`}
-                                disabled={processing}
-                                title="Sign in for today"
-                              >
-                                {processing ? '...' : 'Sign In'}
-                              </Button>
-                            );
-                          }
-
-                          const hasSignIn = att.sign_in || att.signIn || att.signInAt || att.sign_in_at;
-                          const hasSignOut = att.sign_out || att.signOut || att.signOutAt || att.sign_out_at;
-                          if (hasSignIn && !hasSignOut) {
-                            return (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleSignOut(member)}
-                                className={`${isTablet ? 'px-2 py-1 text-sm' : 'px-3 py-1'} text-red-600 hover:bg-red-500/10`}
-                                disabled={processing}
-                                title="Doing workout — click to sign out"
-                              >
-                                {processing ? '...' : 'Doing workout'}
-                              </Button>
-                            );
-                          }
-
-                          if (hasSignIn && hasSignOut) {
-                            return (
-                              <Badge className={isTablet ? 'text-xs px-2 py-1' : 'px-2 py-0.5'}>Attended</Badge>
-                            );
-                          }
-
-                          return (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleSignIn(member)}
-                              disabled={processing}
-                              title="Mark attendance"
-                              className={`${isTablet ? 'px-2 py-1 text-sm' : ''}`}
-                            >
-                              {processing ? '...' : 'Attend'}
-                            </Button>
-                          );
-                        })()} */}
-
-                        {member.is_active === false || member.status === 'expired' ? (
-                          <Button variant="ghost" size="sm" onClick={() => handleRestore(member.id)} className={`text-green-600 hover:bg-neon-green/10 ${isTablet ? 'px-2 py-1 text-sm' : ''}`}>Restore</Button>
-                        ) : (
-                          <Button variant="ghost" size="sm" onClick={() => handleDelete(member.id)} className={`text-red-500 hover:bg-red-500/10 ${isTablet ? 'px-2 py-1' : ''}`}>
-                            <svg className={`${isTablet ? 'w-3 h-3' : 'w-4 h-4'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18" /><path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" /><path d="M10 11v6M14 11v6M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" /></svg>
-                          </Button>
-                        )}
+                        {/* Delete/Restore removed from table actions and moved to profile modal */}
                       </div>
                     </TableCell>
                   </TableRow>
