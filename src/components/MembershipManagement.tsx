@@ -55,7 +55,9 @@ interface Member {
   workout_batch?: string;
   gender?: 'Male' | 'Female';
   dob?: string;
-  age?: number; 
+  age?: number;
+  total_pending_amount?: number;
+  next_payment_date?: string;
 }
 
 /* ---------- device hook: mobile / tablet / desktop ---------- */
@@ -113,8 +115,16 @@ export function MembershipManagement() {
 
   // data/loaders
   const [members, setMembers] = useState<Member[]>([]);
+  const [totalMembers, setTotalMembers] = useState(0); // <-- NEW: Total count from backend
   const [loading, setLoading] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
+
+  // infinite scroll
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const observerTarget = useRef<HTMLDivElement>(null);
+
 
   // member-membership lists for billing panel
   const [memberMemberships, setMemberMemberships] = useState<any[]>([]);
@@ -242,27 +252,88 @@ export function MembershipManagement() {
       workout_batch: item.workout_batch || item.workoutBatch || undefined,
       gender: item.gender || undefined,
       dob: dobIso,
-      age
+
+      age,
+      total_pending_amount: item.total_pending_amount !== undefined ? Number(item.total_pending_amount) : undefined,
+      next_payment_date: item.next_payment_date || undefined
     };
   };
 
-  // --- Fetch members function (extracted so we can re-use to refresh the table) ---
-  const fetchMembers = async () => {
-    setLoading(true);
+  // --- Fetch members function (updated for infinite scroll) ---
+  const fetchMembers = async (pageToFetch = 1, reset = false) => {
+    if (reset) {
+      setLoading(true);
+      setPage(1);
+      setHasMore(true);
+    } else {
+      setIsFetchingMore(true);
+    }
+
     try {
-      const response = await memberService.getMembers({ page: 1, limit: 200 });
+      const response = await memberService.getMembers({ page: pageToFetch, limit: 50 });
+
+      // Robustly extract total
+      const totalCount = response?.data?.total ?? response?.total ?? 0;
+      if (typeof totalCount === 'number') {
+        setTotalMembers(totalCount);
+      }
+
       const list = extractListFromResponse(response);
       const mapped = list.map(mapBackendToMember);
-      setMembers(mapped);
+
+      if (list.length < 50) {
+        setHasMore(false);
+      } else {
+        setHasMore(true);
+      }
+
+      setMembers((prev) => {
+        if (reset) return mapped;
+        // avoid duplicates based on ID
+        const existingIds = new Set(prev.map(m => m.id));
+        const uniqueNew = mapped.filter(m => !existingIds.has(m.id));
+        return [...prev, ...uniqueNew];
+      });
       return mapped;
     } catch (err: any) {
       console.error('Failed to fetch members', err);
       toast.error(err?.message || 'Failed to load members');
       return [];
     } finally {
-      setLoading(false);
+      if (reset) setLoading(false);
+      else setIsFetchingMore(false);
     }
   };
+
+  // --- Infinite Scroll Observer ---
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loading && !isFetchingMore) {
+          setPage((prev) => prev + 1);
+        }
+      },
+      { threshold: 1.0 }
+    );
+
+    if (observerTarget.current) {
+      observer.observe(observerTarget.current);
+    }
+
+    return () => {
+      if (observerTarget.current) {
+        observer.unobserve(observerTarget.current);
+      }
+    };
+  }, [hasMore, loading, isFetchingMore]);
+
+  // --- Fetch more when page changes ---
+  useEffect(() => {
+    if (page > 1) {
+      fetchMembers(page, false);
+    }
+  }, [page]);
+
 
   // --- Fetch pending amount for a single member ---
   const fetchPendingForMember = async (memberId: string, includeInactive = false) => {
@@ -303,18 +374,7 @@ export function MembershipManagement() {
     }
   };
 
-  // --- Fetch pending & next-payment for all currently visible (filtered) members ---
-  const fetchPendingForVisibleMembers = async () => {
-    try {
-      const visible = filteredMembers; // computed below
-      if (!Array.isArray(visible) || visible.length === 0) return;
-      // fetch both pending and next-payment concurrently for visible (limit to first 200)
-      const first = visible.slice(0, 200);
-      await Promise.all(first.map(m => Promise.all([fetchPendingForMember(m.id), fetchNextPaymentForMember(m.id)])));
-    } catch (err) {
-      console.warn('Failed to fetch pending / next payment for visible members', err);
-    }
-  };
+
 
   // --- Fetch todays attendances (extracted so we can refresh after sign in/out) ---
   const fetchTodays = async () => {
@@ -344,33 +404,17 @@ export function MembershipManagement() {
   // --- Load members on mount and today's attendances ---
   useEffect(() => {
     (async () => {
-      await fetchMembers();
+      await fetchMembers(1, true);
       await fetchTodays();
     })();
   }, []);
 
+
   // --- When members or filters/search change, fetch pending for visible members and next payments ---
-  useEffect(() => {
-    // debounce-ish / simple: fetch when members/search/filter change
-    (async () => {
-      try {
-        // small optimization: only fetch for first 200 members visible
-        const visible = members
-          .filter(member => {
-            const matchesSearch =
-              member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-              (member.email || '').toLowerCase().includes(searchTerm.toLowerCase());
-            const matchesFilter = selectedFilter === 'all' || member.status === selectedFilter;
-            return matchesSearch && matchesFilter;
-          })
-          .slice(0, 200);
-        await Promise.all(visible.map(m => Promise.all([fetchPendingForMember(m.id), fetchNextPaymentForMember(m.id)])));
-      } catch (err) {
-        console.warn('Error fetching pending/next-payment for members', err);
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [members, searchTerm, selectedFilter]);
+  // OPTIMIZATION: Removed expensive N+1 calls. Backend now provides next_payment_date and total_pending_amount.
+  // We only rely on map if we want to force refresh or specific details.
+  // The 'pendingMap' and 'nextPaymentMap' will now be populated lazily or ignored for list view.
+
 
   // --- Load membership plans ---
   useEffect(() => {
@@ -395,7 +439,7 @@ export function MembershipManagement() {
     try {
       setImageUploading(true);
       const url = await uploadService.handleImageUpload(file);
-      setNewMember((prev:any) => ({ ...prev, photo: url }));
+      setNewMember((prev: any) => ({ ...prev, photo: url }));
       toast.success('Image uploaded');
     } catch (err: any) {
       console.error('Image upload failed', err);
@@ -419,7 +463,8 @@ export function MembershipManagement() {
       const memberKey = String(member.id);
       setTodayAttendanceMap(prev => ({ ...prev, [memberKey]: res || payload }));
       toast.success('Signed in');
-      await fetchMembers();
+      // await fetchMembers(1, true); // Don't reload all, just today's attendance needs refresh
+
       await fetchTodays();
     } catch (err: any) {
       console.error('Sign-in failed', err);
@@ -442,7 +487,8 @@ export function MembershipManagement() {
         return { ...prev, [memberKey]: updated };
       });
       toast.success('Signed out');
-      await fetchMembers();
+      // await fetchMembers(1, true);
+
       await fetchTodays();
     } catch (err: any) {
       console.error('Sign-out failed', err);
@@ -468,7 +514,8 @@ export function MembershipManagement() {
       const failed = res?.failed || [];
       setBulkResult({ success, failed });
       toast.success(`Bulk upload finished succeeded`);
-      await fetchMembers();
+      await fetchMembers(1, true);
+
       await fetchTodays();
     } catch (err: any) {
       console.error('Bulk upload failed', err);
@@ -518,7 +565,7 @@ export function MembershipManagement() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `bulk-upload-failed-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`;
+    a.download = `bulk-upload-failed-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -1006,7 +1053,7 @@ export function MembershipManagement() {
         .filter(n => n.createdAt)
         .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())[0];
       let amountVal: number | undefined = undefined;
-      
+
       if (latestCreated?.Membership?.price) {
         const p = Number(latestCreated.Membership.price);
         amountVal = isNaN(p) ? undefined : p;
@@ -1082,7 +1129,9 @@ export function MembershipManagement() {
   // --- Payment modal handlers (NEW) ---
   const openPaymentModal = async (member: Member) => {
     setPaymentMember(member);
-    const info = pendingMap[member.id] || await fetchPendingForMember(member.id);
+    // Fetch detailed breakdown (memberships) on demand since list only has total
+    const info = await fetchPendingForMember(member.id);
+
     setPaymentSelectedMembershipId(
       (info?.memberships && info.memberships.find((m: any) => m.pending_amount > 0)?.member_membership_id) ||
       (info?.memberships && info.memberships[0]?.member_membership_id) ||
@@ -1119,7 +1168,9 @@ export function MembershipManagement() {
       // refresh pending for this member and overall members list
       await fetchPendingForMember(paymentMember.id);
       await fetchNextPaymentForMember(paymentMember.id);
-      await fetchMembers();
+      await fetchNextPaymentForMember(paymentMember.id);
+      // await fetchMembers(1, true); // Avoid full reload if not strictly needed, or reload current Member
+
 
       // if billing panel open for this member, refresh it
       if (billingMember && billingMember.id === paymentMember.id) {
@@ -1146,8 +1197,14 @@ export function MembershipManagement() {
 
   // new payment badge (replaces original status badge cell)
   const getPaymentBadgeForMember = (member: Member) => {
-    const pendingInfo = pendingMap[member.id];
-    const totalPending = (pendingInfo && (typeof pendingInfo.total_pending_amount !== 'undefined' ? Number(pendingInfo.total_pending_amount) : undefined)) ?? undefined;
+    // Prefer member.total_pending_amount if available (optimized path)
+    // Fallback to pendingMap if legacy or freshly fetched
+    let totalPending: number | undefined = member.total_pending_amount;
+
+    if (totalPending === undefined && pendingMap[member.id]) {
+      totalPending = Number(pendingMap[member.id]?.total_pending_amount);
+    }
+
 
     const smallBadgeClass = isTablet ? 'px-1 py-0.5 text-[11px]' : 'px-2 py-0.5 text-sm';
     if (typeof totalPending === 'undefined') {
@@ -1191,7 +1248,7 @@ export function MembershipManagement() {
   };
 
   const memberCounts = {
-    all: members.length,
+    all: totalMembers || members.length, // use total if available
     active: members.filter(m => m.status === 'active').length,
     expired: members.filter(m => m.status === 'expired').length,
     pending: members.filter(m => m.status === 'pending').length
@@ -1257,42 +1314,42 @@ export function MembershipManagement() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
                   <div className="grid gap-2 sm:col-span-2">
                     <Label className={`${smallText}`}>Full Name</Label>
-                    <Input value={newMember.name} onChange={(e) => setNewMember({...newMember, name: e.target.value})} />
+                    <Input value={newMember.name} onChange={(e) => setNewMember({ ...newMember, name: e.target.value })} />
                   </div>
                   <div>
                     <Label className={`${smallText}`}>Email</Label>
-                    <Input type="email" value={newMember.email} onChange={(e) => setNewMember({...newMember, email: e.target.value})} />
+                    <Input type="email" value={newMember.email} onChange={(e) => setNewMember({ ...newMember, email: e.target.value })} />
                   </div>
                   <div>
                     <Label className={`${smallText}`}>Phone</Label>
-                    <Input value={newMember.phone} onChange={(e) => setNewMember({...newMember, phone: e.target.value})} />
+                    <Input value={newMember.phone} onChange={(e) => setNewMember({ ...newMember, phone: e.target.value })} />
                   </div>
 
                   <div>
                     <Label className={`${smallText}`}>Date of Birth</Label>
-                    <Input type="date" value={newMember.dob} onChange={(e) => setNewMember({...newMember, dob: e.target.value})} />
+                    <Input type="date" value={newMember.dob} onChange={(e) => setNewMember({ ...newMember, dob: e.target.value })} />
                   </div>
 
                   <div>
                     <Label className={`${smallText}`}>Height (cm)</Label>
-                    <Input type="number" value={newMember.height} onChange={(e) => setNewMember({...newMember, height: e.target.value})} />
+                    <Input type="number" value={newMember.height} onChange={(e) => setNewMember({ ...newMember, height: e.target.value })} />
                   </div>
                   <div>
                     <Label className={`${smallText}`}>Weight (kg)</Label>
-                    <Input type="number" value={newMember.weight} onChange={(e) => setNewMember({...newMember, weight: e.target.value})} />
+                    <Input type="number" value={newMember.weight} onChange={(e) => setNewMember({ ...newMember, weight: e.target.value })} />
                   </div>
 
                   <div>
                     <Label className={`${smallText}`}>Measurement Date</Label>
-                    <Input type="date" value={newMember.measurementDate} onChange={(e) => setNewMember({...newMember, measurementDate: e.target.value})} />
+                    <Input type="date" value={newMember.measurementDate} onChange={(e) => setNewMember({ ...newMember, measurementDate: e.target.value })} />
                   </div>
                 </div>
 
                 <div>
                   <Label className={`${smallText}`}>Address</Label>
-                  <Textarea 
-                    value={newMember.address} 
-                    onChange={(e) => setNewMember({...newMember, address: e.target.value})} 
+                  <Textarea
+                    value={newMember.address}
+                    onChange={(e) => setNewMember({ ...newMember, address: e.target.value })}
                     rows={2}
                     placeholder="Enter full address"
                   />
@@ -1300,7 +1357,7 @@ export function MembershipManagement() {
 
                 <div>
                   <Label className={`${smallText}`}>Start Date</Label>
-                  <Input type="date" value={newMember.startDate} onChange={(e) => setNewMember({...newMember, startDate: e.target.value})} />
+                  <Input type="date" value={newMember.startDate} onChange={(e) => setNewMember({ ...newMember, startDate: e.target.value })} />
                 </div>
               </div>
 
@@ -1387,7 +1444,7 @@ export function MembershipManagement() {
               <Label className={smallText}>Apply To Membership</Label>
               <Select value={paymentSelectedMembershipId || ''} onValueChange={(v: any) => setPaymentSelectedMembershipId(v)}>
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select membership (pending)"/>
+                  <SelectValue placeholder="Select membership (pending)" />
                 </SelectTrigger>
                 <SelectContent>
                   {(paymentMember && pendingMap[paymentMember.id]?.memberships?.length > 0 ? pendingMap[paymentMember.id].memberships : []).map((m: any) => (
@@ -1434,7 +1491,7 @@ export function MembershipManagement() {
                 </div>
                 <div className="flex-1 space-y-1">
                   {isEditing ? (
-                    <Input value={editedMember.name} onChange={(e) => setEditedMember({...editedMember, name: e.target.value})} className={`${isTablet ? 'text-sm font-semibold' : 'text-lg font-semibold'}`} />
+                    <Input value={editedMember.name} onChange={(e) => setEditedMember({ ...editedMember, name: e.target.value })} className={`${isTablet ? 'text-sm font-semibold' : 'text-lg font-semibold'}`} />
                   ) : <h3 className={`${isTablet ? 'text-sm font-semibold' : 'text-lg font-semibold'}`}>{selectedMember.name}</h3>}
                   <div className="flex items-center gap-2">
                     {getStatusBadge(selectedMember.status)}
@@ -1451,17 +1508,17 @@ export function MembershipManagement() {
                 <div className="grid sm:grid-cols-2 gap-2">
                   <div>
                     <Label className={`${smallText}`}>Email</Label>
-                    {isEditing ? <Input type="email" value={editedMember.email} onChange={(e) => setEditedMember({...editedMember, email: e.target.value})} /> : <p className={`${smallText} text-muted-foreground`}>{selectedMember.email}</p>}
+                    {isEditing ? <Input type="email" value={editedMember.email} onChange={(e) => setEditedMember({ ...editedMember, email: e.target.value })} /> : <p className={`${smallText} text-muted-foreground`}>{selectedMember.email}</p>}
                   </div>
                   <div>
                     <Label className={`${smallText}`}>Phone</Label>
-                    {isEditing ? <Input value={editedMember.phone} onChange={(e) => setEditedMember({...editedMember, phone: e.target.value})} /> : <p className={`${smallText} text-muted-foreground`}>{selectedMember.phone}</p>}
+                    {isEditing ? <Input value={editedMember.phone} onChange={(e) => setEditedMember({ ...editedMember, phone: e.target.value })} /> : <p className={`${smallText} text-muted-foreground`}>{selectedMember.phone}</p>}
                   </div>
                 </div>
                 <div className="grid sm:grid-cols-2 gap-2">
                   <div>
                     <Label className={`${smallText}`}>Date of Birth</Label>
-                    {isEditing ? <Input type="date" value={editedMember.dob ? new Date(editedMember.dob).toISOString().slice(0,10) : ''} onChange={(e) => setEditedMember({...editedMember, dob: e.target.value})} /> : <p className={`${smallText} text-muted-foreground`}>{selectedMember.dob ? formatPretty(selectedMember.dob) : 'Not provided'}</p>}
+                    {isEditing ? <Input type="date" value={editedMember.dob ? new Date(editedMember.dob).toISOString().slice(0, 10) : ''} onChange={(e) => setEditedMember({ ...editedMember, dob: e.target.value })} /> : <p className={`${smallText} text-muted-foreground`}>{selectedMember.dob ? formatPretty(selectedMember.dob) : 'Not provided'}</p>}
                   </div>
                   <div>
                     <Label className={`${smallText}`}>Age</Label>
@@ -1470,7 +1527,7 @@ export function MembershipManagement() {
                 </div>
                 <div>
                   <Label className={`${smallText}`}>Address</Label>
-                  {isEditing ? <Textarea value={editedMember.address || ''} onChange={(e) => setEditedMember({...editedMember, address: e.target.value})} rows={2} /> : <p className={`${smallText} text-muted-foreground`}>{selectedMember.address || 'Not provided'}</p>}
+                  {isEditing ? <Textarea value={editedMember.address || ''} onChange={(e) => setEditedMember({ ...editedMember, address: e.target.value })} rows={2} /> : <p className={`${smallText} text-muted-foreground`}>{selectedMember.address || 'Not provided'}</p>}
                 </div>
               </div>
 
@@ -1494,7 +1551,7 @@ export function MembershipManagement() {
 
               <div>
                 <Label className={`${smallText}`}>Notes</Label>
-                {isEditing ? <Textarea value={editedMember.notes || ''} onChange={(e) => setEditedMember({...editedMember, notes: e.target.value})} rows={3} /> : <p className={`${smallText} text-muted-foreground`}>{selectedMember.notes || 'No notes available'}</p>}
+                {isEditing ? <Textarea value={editedMember.notes || ''} onChange={(e) => setEditedMember({ ...editedMember, notes: e.target.value })} rows={3} /> : <p className={`${smallText} text-muted-foreground`}>{selectedMember.notes || 'No notes available'}</p>}
               </div>
             </div>
           )}
@@ -1790,7 +1847,9 @@ export function MembershipManagement() {
 
       <Card className="border-border/50">
         <CardHeader className={`${isTablet ? 'px-3 py-2' : ''}`}>
-          <CardTitle className={`${isTablet ? 'text-lg' : ''}`}>Members ({filteredMembers.length})</CardTitle>
+          <CardTitle className={`${isTablet ? 'text-lg' : ''}`}>
+            Members ({selectedFilter === 'all' && !searchTerm ? totalMembers : filteredMembers.length})
+          </CardTitle>
           <CardDescription className={`${isTablet ? 'text-xs' : ''}`}>{selectedFilter === 'all' ? 'All registered members' : `Members with ${selectedFilter} status`}</CardDescription>
         </CardHeader>
 
@@ -1817,7 +1876,7 @@ export function MembershipManagement() {
                         </div>
                       </div>
                     </TableCell>
-                    
+
                     <TableCell>
                       <div className={`flex items-center gap-3 ${tableRowPadding}`}>
                         <div className={`${avatarSizeClass} bg-gradient-to-r from-neon-green to-neon-blue rounded-full flex items-center justify-center text-white`}>{member.name.charAt(0)}</div>
@@ -1838,7 +1897,9 @@ export function MembershipManagement() {
                     {/* Next Payment column (replaces previous Period column) */}
                     <TableCell className="hidden md:table-cell">
                       <div className="space-y-1">
-                        {nextPaymentLoading[member.id] ? (
+                        {member.next_payment_date ? (
+                          <div className={`${smallText}`}>{formatPretty(member.next_payment_date)}</div>
+                        ) : nextPaymentLoading[member.id] ? (
                           <div className={`${smallText} text-muted-foreground`}>Loading...</div>
                         ) : nextPaymentMap[member.id] ? (
                           <div className={`${smallText}`}>{formatPretty(nextPaymentMap[member.id])}</div>
@@ -1865,8 +1926,22 @@ export function MembershipManagement() {
               </TableBody>
             </Table>
           </div>
+
+          {/* Loading indicator / Sentinel for infinite scroll */}
+          <div ref={observerTarget} className="h-10 flex items-center justify-center w-full mt-4">
+            {isFetchingMore && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                Loading more members...
+              </div>
+            )}
+            {!hasMore && members.length > 0 && (
+              <p className="text-xs text-muted-foreground">No more members to load</p>
+            )}
+          </div>
+
         </CardContent>
       </Card>
-    </div>
+    </div >
   );
 }
