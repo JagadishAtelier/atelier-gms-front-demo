@@ -296,8 +296,7 @@ export function Membership() {
               {filteredMemberships.map((plan) => (
                 <Card
                   key={plan.id}
-                  className="border-border/50 hover:border-border transition-all hover:shadow-md"
-                >
+                  className="border-2 border-border/80 hover:border-border transition-all hover:shadow-md">
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
                       <Badge

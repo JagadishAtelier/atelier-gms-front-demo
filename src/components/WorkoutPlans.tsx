@@ -768,7 +768,7 @@ export function WorkoutPlans() {
               <div className="col-span-full text-center py-8">No plans found</div>
             ) : (
               plans.map((plan) => (
-                <Card key={plan.id} className="border-border/50 hover:border-border transition-colors">
+                <Card key={plan.id} className="border-2 border-border/80 rounded-xl hover:border-border transition-colors">
                   <CardHeader className="pb-4">
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-2 mb-2">
@@ -859,7 +859,7 @@ export function WorkoutPlans() {
       </Tabs>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="border-border/50">
+      <Card className="border-2 border-border/80 rounded-xl">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Total Plans Created</CardTitle>
           </CardHeader>
@@ -871,7 +871,7 @@ export function WorkoutPlans() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/50">
+        <Card className="border-2 border-border/80 rounded-xl">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Members with Plans</CardTitle>
           </CardHeader>
@@ -885,7 +885,7 @@ export function WorkoutPlans() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/50">
+        <Card className="border-2 border-border/80 rounded-xl">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Plans Sent This Week</CardTitle>
           </CardHeader>
@@ -896,29 +896,29 @@ export function WorkoutPlans() {
         </Card>
       </div>
 
-      <Card className="border-border/50">
+      <Card className="border-2 border-border/80 rounded-xl">
         <CardHeader>
           <CardTitle>Plan Templates</CardTitle>
           <CardDescription>Quick-start templates for common fitness goals</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Button variant="outline" className="h-auto p-4 flex-col gap-2 text-left">
+            <Button variant="outline" className="h-auto p-4 flex-col gap-2 text-left border-2 border-border/80 rounded-xl">
               <Dumbbell className="w-6 h-6 text-neon-green" />
               <span className="font-medium">Beginner Strength</span>
               <span className="text-xs text-muted-foreground">3-day full body routine</span>
             </Button>
-            <Button variant="outline" className="h-auto p-4 flex-col gap-2 text-left">
+            <Button variant="outline" className="h-auto p-4 flex-col gap-2 text-left border-2 border-border/80 rounded-xl">
               <Target className="w-6 h-6 text-neon-blue" />
               <span className="font-medium">Fat Loss HIIT</span>
               <span className="text-xs text-muted-foreground">High-intensity cardio plan</span>
             </Button>
-            <Button variant="outline" className="h-auto p-4 flex-col gap-2 text-left">
+            <Button variant="outline" className="h-auto p-4 flex-col gap-2 text-left border-2 border-border/80 rounded-xl">
               <Apple className="w-6 h-6 text-purple-500" />
               <span className="font-medium">Weight Loss Diet</span>
               <span className="text-xs text-muted-foreground">Balanced nutrition plan</span>
             </Button>
-            <Button variant="outline" className="h-auto p-4 flex-col gap-2 text-left">
+            <Button variant="outline" className="h-auto p-4 flex-col gap-2 text-left border-2 border-border/80 rounded-xl">
               <User className="w-6 h-6 text-orange-500" />
               <span className="font-medium">Muscle Building</span>
               <span className="text-xs text-muted-foreground">High-protein meal plan</span>

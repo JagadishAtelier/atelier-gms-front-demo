@@ -783,7 +783,7 @@ export function InvoiceManagement(): JSX.Element {
           { title: "Outstanding", value: formatCurrency(totals.pendingAmount), icon: <Clock className="h-4 w-4 text-yellow-500" /> },
           { title: "Late Fees", value: formatCurrency(totals.lateFees), icon: <AlertTriangle className="h-4 w-4 text-red-500" /> },
         ].map((c, i) => (
-          <Card key={i} className="border-border/50">
+            <Card key={i} className="border-2 border-border">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm">{c.title}</CardTitle>
               {c.icon}
@@ -796,7 +796,7 @@ export function InvoiceManagement(): JSX.Element {
       </div>
 
       {/* Search + Filter */}
-      <Card className="border-border/50">
+      <Card className="border-2 border-border/80 rounded-xl">
         <CardContent className="p-6 flex flex-col sm:flex-row gap-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
@@ -822,7 +822,8 @@ export function InvoiceManagement(): JSX.Element {
       </Card>
 
       {/* Invoices Table */}
-      <Card className="border-border/50">
+      <Card className="border-2 border-border/80 rounded-xl">
+
         <CardHeader>
           <CardTitle>Invoices ({filteredInvoices.length})</CardTitle>
           <CardDescription>Latest billing records</CardDescription>

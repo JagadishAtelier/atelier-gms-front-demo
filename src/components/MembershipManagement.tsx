@@ -1820,7 +1820,7 @@ export function MembershipManagement() {
         </DialogContent>
       </Dialog>
 
-      <Card className="border-border/50">
+      <Card className="border-2 border-border/80">
         <CardContent className={`${cardPadding}`}>
           <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
             <div className="relative flex-1">
@@ -1845,7 +1845,7 @@ export function MembershipManagement() {
         </CardContent>
       </Card>
 
-      <Card className="border-border/50">
+      <Card className="border-2 border-border">
         <CardHeader className={`${isTablet ? 'px-3 py-2' : ''}`}>
           <CardTitle className={`${isTablet ? 'text-lg' : ''}`}>
             Members ({selectedFilter === 'all' && !searchTerm ? totalMembers : filteredMembers.length})

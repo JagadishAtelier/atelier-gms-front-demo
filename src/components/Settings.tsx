@@ -262,7 +262,7 @@ export function Settings({ theme, onThemeChange }: SettingsProps) {
 
         {/* Profile (unchanged) */}
         <TabsContent value="profile" className="space-y-6">
-          <Card className="border-border/50">
+        <Card className="border-2 border-border/80">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <User className="h-5 w-5 text-neon-green" />

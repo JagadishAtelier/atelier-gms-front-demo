@@ -176,9 +176,9 @@ export default function ProductManagement() {
 
         <Dialog.Root open={open} onOpenChange={setOpen}>
           <Dialog.Trigger asChild>
-            <button className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
-              <Plus size={16} /> Add Product
-            </button>
+          <button className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-neon-green to-neon-blue px-4 py-2 text-sm font-medium text-white shadow hover:opacity-90">
+  <Plus size={16} /> Add Product
+</button>
           </Dialog.Trigger>
 
           <Dialog.Portal>
@@ -252,7 +252,7 @@ export default function ProductManagement() {
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-3 lg:grid-cols-4">
         {products.map((product) => (
-          <div key={product.id} className="rounded-xl border bg-white">
+          <div key={product.id} className="rounded-xl border-2 border-border/80 bg-white">
             <img
               src={product.image || "https://via.placeholder.com/400x300"}
               alt={product.title}
