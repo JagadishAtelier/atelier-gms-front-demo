@@ -822,6 +822,7 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
   };
 
   return (
+    <div className="min-h-screen bg-slate-50">
     <div className="space-y-6 px-2 md:px-0">
       {/* ---------- Advanced profile header (new) ---------- */}
       <div className="w-full">
@@ -1409,7 +1410,7 @@ export function MemberDashboard({ onNavigate }: MemberDashboardProps) {
   </div>
 )}
 
-
+</div>
     </div>
   );
 }

@@ -372,15 +372,14 @@ export function MemberWorkoutPlans() {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-3">
-                      
+                  <div className="space-y-1">
+  <div className="flex justify-between text-xs text-muted-foreground">
+    <span>Progress</span>
+    <span>{progress}%</span>
+  </div>
+  <ProgressBar percent={progress} />
+</div>
 
-                      
-                    </div>
-
-                    
-                  </div>
 
                   <div className="text-xs text-muted-foreground">
                     Trainer: {plan.trainer?.name || "—"} {plan.trainer?.phone ? `• ${plan.trainer.phone}` : ""}

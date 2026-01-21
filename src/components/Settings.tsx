@@ -243,6 +243,7 @@ export function Settings({ theme, onThemeChange }: SettingsProps) {
   };
 
   return (
+    
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl mb-2">Settings</h1>
@@ -271,10 +272,11 @@ export function Settings({ theme, onThemeChange }: SettingsProps) {
               <CardDescription>Update your personal details and profile information</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center gap-4">
-                <div className="w-20 h-20 rounded-full bg-gradient-to-r from-neon-green/20 to-neon-blue/20 flex items-center justify-center">
-                  <User className="h-10 w-10 text-neon-green" />
-                </div>
+            <div className="flex items-center gap-4">
+              <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center">
+  <User className="h-10 w-10 text-muted-foreground" />
+</div>
+
                 <div className="space-y-2">
                   <Button variant="outline" size="sm">
                     <Upload className="h-4 w-4 mr-2" />
@@ -353,7 +355,7 @@ export function Settings({ theme, onThemeChange }: SettingsProps) {
 
         {/* Gym Settings - now driven from API (show & edit single gym) */}
         <TabsContent value="gym" className="space-y-6">
-          <Card className="border-border/50">
+        <Card className="border-2 border-border/80">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Building2 className="h-5 w-5 text-neon-blue" />
@@ -492,7 +494,7 @@ export function Settings({ theme, onThemeChange }: SettingsProps) {
 
         {/* Display (unchanged) */}
         <TabsContent value="display" className="space-y-6">
-          <Card className="border-border/50">
+        <Card className="border-2 border-border/80">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Palette className="h-5 w-5 text-purple-400" />
@@ -605,7 +607,7 @@ export function Settings({ theme, onThemeChange }: SettingsProps) {
 
         {/* Security (unchanged) */}
         <TabsContent value="security" className="space-y-6">
-          <Card className="border-border/50">
+        <Card className="border-2 border-border/80">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Shield className="h-5 w-5 text-orange-400" />

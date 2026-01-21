@@ -170,6 +170,7 @@ export default function ProductManagement() {
   };
 
   return (
+    <div className="min-h-screen bg-slate-50">
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Products</h1>
@@ -277,5 +278,6 @@ export default function ProductManagement() {
         ))}
       </div>
     </div>
+    </div >
   );
 }

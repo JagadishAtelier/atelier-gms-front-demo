@@ -392,13 +392,11 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   // computed border style for the stat cards (5px)
   const statCardBorderStyle = {
-    borderWidth: 2, // medium
+    borderWidth: 1.5,                 
     borderStyle: "solid",
-    borderColor: isDark
-      ? "rgba(255,255,255,0.15)"
-      : "rgba(15,23,42,0.12)",
+    borderColor: "rgba(0,0,0,0.12)",  
     borderRadius: 16,
-  };
+  };  
   // Tablet-specific size adjustments
   const titleClass = isTablet ? "text-2xl" : "text-3xl sm:text-4xl";
   const cardPaddingClass = isTablet ? "p-3" : "p-4";
@@ -415,11 +413,12 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const iconBubbleSize = isTablet ? "sm" : "md";
 
   return (
+    <div className="min-h-screen bg-slate-50">
     <div className={`space-y-6 px-2 md:px-0`}>
       <div className="flex items-center justify-between">
         <div>
           <h1
-            className={`${titleClass} font-extrabold bg-clip-text text-transparent ${
+            className={`${titleClass} text-2xl font-bold text-gray-900 ${
               isDark ? "bg-gradient-to-r from-sky-400 to-emerald-300" : "bg-gradient-to-r from-blue-500 to-green-400"
             }`}
           >
@@ -731,8 +730,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           </CardContent>
         </Card>
       </motion.div>
+      </div>
     </div>
   );
+  
 }
 
 export default Dashboard;

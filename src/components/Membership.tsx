@@ -130,37 +130,35 @@ export function Membership() {
 
     try {
       setLoading(true);
-
+    
       const payload = {
         name: form.name.trim(),
-        price: parseFloat(form.price as unknown as string),
-        duration_months: parseInt(form.duration_months || "1", 10) || 1,
+        price: parseFloat(form.price),
+        duration_months: parseInt(form.duration_months || "1", 10),
         description: form.description?.trim() || "",
       };
-
+    
       if (editingId) {
-        // Update flow
+        // UPDATE
         await membershipService.updateMembership(editingId, payload);
         toast.success("Membership updated successfully!");
       } else {
-        // Create flow
+        // CREATE
         await membershipService.createMembership(payload);
         toast.success("Membership created successfully!");
       }
-
-      // refresh canonical data from server
+    
       await fetchMemberships();
-
-      // reset modal & form
       setEditingId(null);
       setForm({ name: "", price: "", duration_months: "", description: "" });
       setIsCreateOpen(false);
+    
     } catch (err: any) {
-      toast.error(err?.message || (editingId ? "Failed to update membership" : "Failed to create membership"));
+      toast.error(err?.message || "Operation failed");
     } finally {
       setLoading(false);
     }
-  };
+      };
 
   const handleDelete = async (id: string) => {
     try {
@@ -194,6 +192,7 @@ export function Membership() {
   };
 
   return (
+    <div className="min-h-screen bg-slate-50">
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -373,5 +372,6 @@ export function Membership() {
         </TabsContent>
       </Tabs>
     </div>
+    </div >
   );
 }
