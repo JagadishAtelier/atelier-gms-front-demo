@@ -473,11 +473,11 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           },
         ].map((item, i) => (
           <motion.div key={i} whileHover={{ y: -6 }} transition={{ duration: 0.25 }} className="h-full">
-            <Card
-              style={statCardBorderStyle}
-              className={`${cardPaddingClass} h-full hover:shadow-2xl transition-all duration-300 flex flex-col bg-transparent`}
-            >
-              <CardHeader className="flex items-center justify-between pb-2">
+           <Card
+  style={statCardBorderStyle}
+  className={`${cardPaddingClass} h-full hover:shadow-2xl transition-all duration-300 flex flex-col bg-transparent`}
+>
+  <CardHeader className="flex items-center justify-between pb-2">
                 <CardTitle className={`font-medium flex items-center gap-2 ${isTablet ? "text-sm" : "text-sm"}`}>
                   <IconBubble className={item.bubble} ariaLabel={item.aria} size={iconBubbleSize}>
                     {item.icon}
