@@ -392,7 +392,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   // computed border style for the stat cards (5px)
   const statCardBorderStyle = {
-    borderWidth: 4,
+    borderWidth: 2, 
     borderStyle: "solid",
     borderColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(15,23,42,0.06)",
     borderRadius: 16,
