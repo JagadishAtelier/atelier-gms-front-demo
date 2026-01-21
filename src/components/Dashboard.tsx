@@ -392,12 +392,14 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   // computed border style for the stat cards (5px)
   const statCardBorderStyle = {
-    borderWidth: 1.5,                 
+    borderWidth: 1.5,
     borderStyle: "solid",
-    borderColor: "rgba(0,0,0,0.12)",  
+    borderColor: isDark
+      ? "rgba(255,255,255,0.25)" 
+      : "rgba(0,0,0,0.12)",      
     borderRadius: 16,
-  };  
-  // Tablet-specific size adjustments
+  };
+   // Tablet-specific size adjustments
   const titleClass = isTablet ? "text-2xl" : "text-3xl sm:text-4xl";
   const cardPaddingClass = isTablet ? "p-3" : "p-4";
   const statValueClass = isTablet ? "text-xl" : "text-2xl sm:text-3xl";
@@ -417,13 +419,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     <div className={`space-y-6 px-2 md:px-0`}>
       <div className="flex items-center justify-between">
         <div>
-          <h1
-            className={`${titleClass} text-2xl font-bold text-gray-900 ${
-              isDark ? "bg-gradient-to-r from-sky-400 to-emerald-300" : "bg-gradient-to-r from-blue-500 to-green-400"
-            }`}
-          >
-            Gym Dashboard
-          </h1>
+         <h1 className="text-3xl mb-2">Gym Dashboard</h1>
           <p className={`text-muted-foreground mt-1 ${isTablet ? "text-sm" : ""}`}>Welcome back! Here’s your performance overview.</p>
         </div>
 
@@ -475,7 +471,14 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           <motion.div key={i} whileHover={{ y: -6 }} transition={{ duration: 0.25 }} className="h-full">
            <Card
   style={statCardBorderStyle}
-  className={`${cardPaddingClass} h-full hover:shadow-2xl transition-all duration-300 flex flex-col bg-background`}
+  className="
+    h-full
+    bg-white dark:bg-slate-900
+    rounded-2xl
+    transition-all
+    hover:shadow-md
+    flex flex-col
+  "
 >
   <CardHeader className="flex items-center justify-between pb-2">
                 <CardTitle className={`font-medium flex items-center gap-2 ${isTablet ? "text-sm" : "text-sm"}`}>
@@ -516,7 +519,14 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <Card
   style={statCardBorderStyle}
-  className={`${cardPaddingClass} bg-background`}
+  className="
+    h-full
+    bg-white dark:bg-slate-900
+    rounded-2xl
+    transition-all
+    hover:shadow-md
+    flex flex-col
+  "
 >
           <CardHeader>
             <CardTitle className={`flex items-center gap-2 ${isTablet ? "text-base" : "text-lg"}`}>
