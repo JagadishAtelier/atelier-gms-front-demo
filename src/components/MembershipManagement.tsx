@@ -1269,7 +1269,7 @@ export function MembershipManagement() {
   const buttonCompact = isTablet ? 'px-3 py-1 text-sm' : 'px-4 py-2';
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-[#F6F7F9]">
     <div className={`space-y-6 ${pagePadding}`}>
       {/* Top area */}
       <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4`}>

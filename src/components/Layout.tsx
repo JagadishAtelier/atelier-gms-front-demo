@@ -311,7 +311,7 @@ export function Layout({
         </div>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-auto p-6 bg-background text-foreground">{children}</main>
+        <main className="flex-1 overflow-auto p-6 bg-slate-50 text-foreground">{children}</main>
 
         {/* Mobile Bottom Nav */}
         <div className="md:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-border p-2 z-50">

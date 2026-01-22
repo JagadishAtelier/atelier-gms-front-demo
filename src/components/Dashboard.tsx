@@ -392,12 +392,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   // computed border style for the stat cards (5px)
   const statCardBorderStyle = {
-    border: "1px solid transparent",
-    outline: "1.5px solid rgb(203 213 225)",
-    outlineOffset: "-1px",
+    border: "1px solid rgb(226 232 240)", // slate-200
     borderRadius: 16,
-    backgroundColor: "transparent",
-  };  
+    backgroundColor: "#ffffff",          // ✅ IMPORTANT
+  };
 
   // Tablet-specific size adjustments
   const titleClass = isTablet ? "text-2xl" : "text-3xl sm:text-4xl";
@@ -415,7 +413,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const iconBubbleSize = isTablet ? "sm" : "md";
 
   return (
-<div className="min-h-screen bg-slate-100">
+<div className="min-h-screen bg-transparent">
     <div className={`space-y-6 px-2 md:px-0`}>
       <div className="flex items-center justify-between">
         <div>
