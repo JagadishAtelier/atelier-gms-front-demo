@@ -170,8 +170,8 @@ export default function ProductManagement() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F6F7F9]">
-    <div className="p-6 space-y-6">
+<div className="min-h-screen bg-background">
+      <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
       <h1 className="text-3xl mb-2">Products</h1>
 

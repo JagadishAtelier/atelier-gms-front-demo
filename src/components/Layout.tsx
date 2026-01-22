@@ -258,7 +258,7 @@ export function Layout({
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Mobile Header */}
-        <div className="md:hidden flex items-center justify-between p-4 bg-card border-b border-border">
+        <div className="md:hidden flex items-center justify-between p-4 bg-background border-b border-border">
           <div className="flex items-center gap-3">
             <div className="p-1 bg-gradient-to-r from-neon-green to-neon-blue rounded-lg">
               <Dumbbell className="w-5 h-5 text-white" />
@@ -284,7 +284,7 @@ export function Layout({
         </div>
 
         {/* Desktop Header */}
-        <div className="hidden md:flex items-center justify-between p-4 bg-card/50 border-b border-border backdrop-blur-sm">
+        <div className="hidden md:flex items-center justify-between p-4 bg-background border-b border-border">
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
@@ -311,7 +311,9 @@ export function Layout({
         </div>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-auto p-6 bg-slate-50 text-foreground">{children}</main>
+        <main className="flex-1 overflow-auto p-6 bg-background dark:bg-black text-foreground">
+  {children}
+</main>
 
         {/* Mobile Bottom Nav */}
         <div className="md:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-border p-2 z-50">

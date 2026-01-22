@@ -392,10 +392,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   // computed border style for the stat cards (5px)
   const statCardBorderStyle = {
-    border: "1px solid rgb(226 232 240)", // slate-200
     borderRadius: 16,
-    backgroundColor: "#ffffff",          // ✅ IMPORTANT
   };
+  
 
   // Tablet-specific size adjustments
   const titleClass = isTablet ? "text-2xl" : "text-3xl sm:text-4xl";
@@ -413,7 +412,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const iconBubbleSize = isTablet ? "sm" : "md";
 
   return (
-<div className="min-h-screen bg-transparent">
+<div className="min-h-screen bg-background dark:bg-black">
     <div className={`space-y-6 px-2 md:px-0`}>
       <div className="flex items-center justify-between">
         <div>
@@ -467,10 +466,11 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           },
         ].map((item, i) => (
           <motion.div key={i} whileHover={{ y: -6 }} transition={{ duration: 0.25 }} className="h-full">
-          <Card
+<Card
   style={statCardBorderStyle}
-  className={`${cardPaddingClass} h-full transition-all duration-300 flex flex-col`}
+  className={`${cardPaddingClass} h-full transition-all duration-300 flex flex-col border-2 border-border`}
 >
+
 <CardHeader className="flex items-center justify-between pb-2">
                 <CardTitle className={`font-medium flex items-center gap-2 ${isTablet ? "text-sm" : "text-sm"}`}>
                   <IconBubble className={item.bubble} ariaLabel={item.aria} size={iconBubbleSize}>
@@ -515,10 +515,13 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     rounded-2xl
     flex flex-col
     border
-    bg-transparent
+    bg-card
+    text-card-foreground
+    dark:border-border
     transition-colors
   "
 >
+
       <CardHeader>
             <CardTitle className={`flex items-center gap-2 ${isTablet ? "text-base" : "text-lg"}`}>
               <IconBubble className="bg-gradient-to-br from-green-50 to-emerald-100" ariaLabel="Present Today" size={iconBubbleSize}>
@@ -543,13 +546,17 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             </div>
           </CardContent>
         </Card>
-
         <Card
   style={statCardBorderStyle}
-  className={`${cardPaddingClass} border bg-transparent`}
+  className={`
+    ${cardPaddingClass}
+    border
+    bg-card
+    text-card-foreground
+    dark:border-border
+  `}
 >
-
-              <CardHeader>
+       <CardHeader>
             <CardTitle className={`flex items-center gap-2 ${isTablet ? "text-base" : "text-lg"}`}>
               <IconBubble className="bg-gradient-to-br from-yellow-50 to-orange-50" ariaLabel="Doing Workout Now" size={iconBubbleSize}>
                 <Users className={iconSizeClass} style={{ color: "#d97706" }} />

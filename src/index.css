@@ -3168,9 +3168,21 @@
 }
 
 .dark {
-  --background: oklch(.08 0 0);
-  --foreground: oklch(.98 0 0);
-  --card: oklch(.12 0 0);
+  --background: #000000;      /* FULL BLACK */
+  --foreground: #ffffff;
+
+  --card: #000000;            /* cards also black */
+  --card-foreground: #ffffff;
+
+  --popover: #000000;
+  --popover-foreground: #ffffff;
+
+  --muted: #000000;
+  --accent: #000000;
+
+  --border: #1f1f1f;           /* soft border visible on black */
+
+
   --card-foreground: oklch(.98 0 0);
   --popover: oklch(.12 0 0);
   --popover-foreground: oklch(.98 0 0);

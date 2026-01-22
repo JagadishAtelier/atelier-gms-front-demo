@@ -243,8 +243,7 @@ export function Settings({ theme, onThemeChange }: SettingsProps) {
   };
 
   return (
-    <div className="min-h-screen bg-[#F6F7F9]">
-
+<div className="min-h-screen bg-background">
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl mb-2">Settings</h1>

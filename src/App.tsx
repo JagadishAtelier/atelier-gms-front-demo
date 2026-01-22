@@ -114,8 +114,9 @@ export default function App() {
   }
 
   return (
-<div className={`${theme === "dark" ? "dark" : ""} min-h-screen bg-[#F6F7F9]`}>
-      <Toaster position="top-right" richColors closeButton />
+<div
+  className={`${theme === "dark" ? "dark" : ""} min-h-screen bg-background`}> 
+       <Toaster position="top-right" richColors closeButton />
       {!isAuthenticated ? (
         <Login onLogin={handleLogin} />
       ) : (
