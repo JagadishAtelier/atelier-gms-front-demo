@@ -392,14 +392,14 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   // computed border style for the stat cards (5px)
   const statCardBorderStyle = {
-    borderWidth: 1.5,
-    borderStyle: "solid",
-    borderColor: isDark
-      ? "rgba(255,255,255,0.25)" 
-      : "rgba(0,0,0,0.12)",      
+    border: "1px solid transparent",
+    outline: "1.5px solid rgb(203 213 225)",
+    outlineOffset: "-1px",
     borderRadius: 16,
-  };
-   // Tablet-specific size adjustments
+    backgroundColor: "transparent",
+  };  
+
+  // Tablet-specific size adjustments
   const titleClass = isTablet ? "text-2xl" : "text-3xl sm:text-4xl";
   const cardPaddingClass = isTablet ? "p-3" : "p-4";
   const statValueClass = isTablet ? "text-xl" : "text-2xl sm:text-3xl";
@@ -415,7 +415,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const iconBubbleSize = isTablet ? "sm" : "md";
 
   return (
-    <div className="min-h-screen bg-slate-50">
+<div className="min-h-screen bg-slate-100">
     <div className={`space-y-6 px-2 md:px-0`}>
       <div className="flex items-center justify-between">
         <div>
@@ -469,18 +469,11 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           },
         ].map((item, i) => (
           <motion.div key={i} whileHover={{ y: -6 }} transition={{ duration: 0.25 }} className="h-full">
-           <Card
+          <Card
   style={statCardBorderStyle}
-  className="
-    h-full
-    bg-white dark:bg-slate-900
-    rounded-2xl
-    transition-all
-    hover:shadow-md
-    flex flex-col
-  "
+  className={`${cardPaddingClass} h-full transition-all duration-300 flex flex-col`}
 >
-  <CardHeader className="flex items-center justify-between pb-2">
+<CardHeader className="flex items-center justify-between pb-2">
                 <CardTitle className={`font-medium flex items-center gap-2 ${isTablet ? "text-sm" : "text-sm"}`}>
                   <IconBubble className={item.bubble} ariaLabel={item.aria} size={iconBubbleSize}>
                     {item.icon}
@@ -521,14 +514,14 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   style={statCardBorderStyle}
   className="
     h-full
-    bg-white dark:bg-slate-900
     rounded-2xl
-    transition-all
-    hover:shadow-md
     flex flex-col
+    border
+    bg-transparent
+    transition-colors
   "
 >
-          <CardHeader>
+      <CardHeader>
             <CardTitle className={`flex items-center gap-2 ${isTablet ? "text-base" : "text-lg"}`}>
               <IconBubble className="bg-gradient-to-br from-green-50 to-emerald-100" ariaLabel="Present Today" size={iconBubbleSize}>
                 <Users className={iconSizeClass} style={{ color: "#059669" }} />
@@ -555,7 +548,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
         <Card
   style={statCardBorderStyle}
-  className={`${cardPaddingClass} bg-background`}>
+  className={`${cardPaddingClass} border bg-transparent`}
+>
+
               <CardHeader>
             <CardTitle className={`flex items-center gap-2 ${isTablet ? "text-base" : "text-lg"}`}>
               <IconBubble className="bg-gradient-to-br from-yellow-50 to-orange-50" ariaLabel="Doing Workout Now" size={iconBubbleSize}>
@@ -588,8 +583,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}>
         <Card
   style={statCardBorderStyle}
-  className={`${cardPaddingClass} bg-background hover:shadow-xl transition-all`}
->
+  className={`${cardPaddingClass} transition-all`}
+  >
             <CardHeader>
               <CardTitle className={`flex items-center gap-2 ${isTablet ? "text-base" : "text-lg"}`}>
                 <IconBubble className="bg-gradient-to-br from-emerald-100 to-green-50" ariaLabel="Revenue Overview" size={iconBubbleSize}>
@@ -632,8 +627,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }}>
         <Card
   style={statCardBorderStyle}
-  className={`${cardPaddingClass} bg-background hover:shadow-xl transition-all`}
->
+  className={`${cardPaddingClass} transition-all`}
+  >
             <CardHeader>
               <CardTitle className={`flex items-center gap-2 ${isTablet ? "text-base" : "text-lg"}`}>
                 <IconBubble className="bg-gradient-to-br from-indigo-100 to-purple-50" ariaLabel="Top Plans" size={iconBubbleSize}>
@@ -672,8 +667,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <Card
   style={statCardBorderStyle}
-  className={`${cardPaddingClass} bg-background hover:shadow-xl transition-all`}
->
+  className={`${cardPaddingClass} transition-all`}
+  >
           <CardHeader>
             <CardTitle className={`flex items-center gap-2 ${isTablet ? "text-base" : "text-lg"}`}>
               <IconBubble className="bg-gradient-to-br from-blue-100 to-cyan-50" ariaLabel="Monthly New Joins" size={iconBubbleSize}>
