@@ -28,7 +28,6 @@
     display: flex;
     flex-direction: column;
     justify-content: center;
-    background: #f9f9f9;
 }
 
 .MAIN-left h1 {
@@ -72,7 +71,6 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    background: #fff;
 }
 
 .MAIN-right img {
@@ -98,6 +96,9 @@
     .MAIN-left h2 {
         font-size: 28px;
     }
+    .MAIN{
+        height: fit-content;
+    }
 }
 
 @media (max-width: 500px) {
@@ -116,5 +117,8 @@
     .MAIN-left .MAIN-btn {
         width: 100%;
         text-align: center;
+    }
+    .MAIN-right img{
+        height: 30vh;
     }
 }
