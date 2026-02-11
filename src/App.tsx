@@ -3,7 +3,7 @@ import { Toaster } from "sonner";
 import { Login } from "./components/Login";
 import { Layout } from "./components/Layout";
 import { Dashboard } from "./components/Dashboard";
-import  MembershipDashboard  from "./components/MemberDashboard";
+import MembershipDashboard from "./components/MemberDashboard";
 import { MembershipManagement } from "./components/MembershipManagement";
 import { InvoiceManagement } from "./components/InvoiceManagement";
 import { WorkoutPlans } from "./components/WorkoutPlans";
@@ -13,10 +13,11 @@ import { CommunicationHistory } from "./components/CommunicationHistory";
 import { Settings } from "./components/Settings";
 import authService from "./service/authService.js";
 import MemberWorkoutPlans from "./components/MemberWorkoutPlans";
-import  MemberRenewal  from "./components/MemberRenewal";
+import MemberRenewal from "./components/MemberRenewal";
 import ResetPassword from "./components/ResetPassword";
 import ProductManagement from "./components/ProductManagement.js";
 import PWAInstallBanner from "./components/PWAInstallBanner.js";
+import MaintenancePage from "./components/MaintenancePage.js";
 
 export type NavigationItem =
   | "dashboard"
@@ -40,7 +41,7 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<NavigationItem>("dashboard");
   const [theme, setTheme] = useState<Theme>("dark");
   const [loading, setLoading] = useState(true); // ⏳ to avoid flicker during auth check
-
+  const isMaintenanceMode = true;
   // ✅ Check if user is already logged in (token in localStorage)
   useEffect(() => {
     const token = authService.getToken();
@@ -112,28 +113,28 @@ export default function App() {
       </div>
     );
   }
-
+  if (isMaintenanceMode) return <MaintenancePage />;
   return (
-<div
-  className={`${theme === "dark" ? "dark" : ""} min-h-screen bg-background`}> 
-       <Toaster position="top-right" richColors closeButton />
+    <div
+      className={`${theme === "dark" ? "dark" : ""} min-h-screen bg-background`}>
+      <Toaster position="top-right" richColors closeButton />
       {!isAuthenticated ? (
         <Login onLogin={handleLogin} />
       ) : (
         <>
-        <Layout
-          currentPage={currentPage}
-          onNavigate={setCurrentPage}
-          onLogout={handleLogout}
-          theme={theme}
-          onThemeToggle={toggleTheme}
-        >
-          {renderCurrentPage()}
-        </Layout>
+          <Layout
+            currentPage={currentPage}
+            onNavigate={setCurrentPage}
+            onLogout={handleLogout}
+            theme={theme}
+            onThemeToggle={toggleTheme}
+          >
+            {renderCurrentPage()}
+          </Layout>
         </>
       )}
-      
-        <PWAInstallBanner />
+
+      <PWAInstallBanner />
     </div>
   );
 }
