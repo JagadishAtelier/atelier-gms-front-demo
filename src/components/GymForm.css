@@ -1,0 +1,283 @@
+/* ======== General Body & Container ======== */
+.GYMFORM-container {
+    display: flex;
+    min-height: 100vh;
+    width: 100%;
+    color: #fff;
+    font-family: 'Poppins', sans-serif;
+}
+
+/* ======== Left Side with Background Image & Overlay ======== */
+.GYMFORM-left {
+    flex: 1;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 40px;
+    text-align: left;
+    color: #fff;
+
+    /* Background image */
+    background-image: url('https://img.freepik.com/free-photo/sporty-woman-exercising-gym_23-2147827935.jpg?uid=R175611833&ga=GA1.1.1276842385.1760516584&semt=ais_hybrid&w=740&q=80');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+
+    /* Overlay using a pseudo-element */
+}
+
+.GYMFORM-left::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.7); /* semi-transparent dark overlay */
+    z-index: 0;
+}
+
+.GYMFORM-left h2,
+.GYMFORM-left p {
+    position: relative;
+    text-align: center;
+    z-index: 1; /* above overlay */
+}
+
+.GYMFORM-left h2 {
+    font-size: 3rem;
+    margin-bottom: 15px;
+    font-weight: bold;
+    color: #ff3d00;
+}
+
+.GYMFORM-left p {
+    font-size: 1.5rem;
+    line-height: 1.6;
+    color: #fff;
+}
+
+/* ======== Right Side Form ======== */
+.GYMFORM-right {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 40px;
+}
+
+.GYMFORM-card {
+    width: 100%;
+    max-width: 550px;
+    background-color: #1a1a1a;
+    padding: 30px;
+    border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7);
+    z-index: 2;
+}
+
+/* ======== Card Header ======== */
+.GYMFORM-card-header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.GYMFORM-icon-wrapper {
+    background-color: #ff3d00;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 0 auto 10px auto;
+}
+
+.GYMFORM-card-title {
+    font-size: 1.6rem;
+    margin-bottom: 5px;
+}
+
+.GYMFORM-card-description {
+    font-size: 0.9rem;
+    color: #ccc;
+}
+
+/* ======== Form Elements ======== */
+.GYMFORM-form {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.GYMFORM-label {
+    font-size: 0.9rem;
+    margin-bottom: 5px;
+    color: #fff;
+}
+
+.GYMFORM-input-wrapper {
+    display: flex;
+    align-items: center;
+    background-color: #222;
+    padding: 10px 12px;
+    border-radius: 8px;
+    gap: 10px;
+    border: 1px solid #333;
+    color: #fff;
+}
+
+.GYMFORM-input-wrapper input,
+.GYMFORM-input-wrapper select,
+.GYMFORM-input-wrapper textarea {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #fff;
+    font-size: 0.95rem;
+}
+
+.GYMFORM-input-wrapper select {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    color: #fff;
+}
+
+.GYMFORM-input-wrapper textarea {
+    resize: none;
+    height: 60px;
+    padding-top: 8px;
+}
+
+/* ======== Button ======== */
+.GYMFORM-button {
+    background-color: #ff3d00;
+    color: #fff;
+    padding: 12px 0;
+    font-size: 1rem;
+    font-weight: 500;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    margin-top: 10px;
+}
+
+.GYMFORM-button:hover {
+    background-color: #e63600;
+}
+
+/* ======== OTP Modal ======== */
+.GYMFORM-otp-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 999;
+}
+
+.GYMFORM-otp-card {
+    background-color: #1a1a1a;
+    padding: 30px;
+    border-radius: 12px;
+    width: 350px;
+    text-align: center;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7);
+}
+
+.GYMFORM-otp-card h3 {
+    margin-bottom: 10px;
+    color: #ff3d00;
+}
+
+.GYMFORM-otp-card p {
+    margin-bottom: 15px;
+    color: #ccc;
+    font-size: 0.9rem;
+}
+
+.GYMFORM-otp-input {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #333;
+    background: #222;
+    color: #fff;
+    margin-bottom: 15px;
+    font-size: 1rem;
+}
+
+.GYMFORM-otp-button {
+    background-color: #ff3d00;
+    color: #fff;
+    padding: 10px 0;
+    width: 100%;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-bottom: 10px;
+    transition: all 0.3s ease;
+}
+
+.GYMFORM-otp-button:hover {
+    background-color: #e63600;
+}
+
+.GYMFORM-otp-cancel {
+    background: transparent;
+    color: #fff;
+    border: 1px solid #555;
+    padding: 8px 0;
+    width: 100%;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.GYMFORM-otp-cancel:hover {
+    background-color: #333;
+}
+
+/* ======== Responsive ======== */
+@media (max-width: 1024px) {
+    .GYMFORM-container {
+        flex-direction: column;
+    }
+
+    .GYMFORM-left,
+    .GYMFORM-right {
+        flex: unset;
+        width: 100%;
+        height: auto;
+        position: relative;
+    }
+
+    .GYMFORM-left {
+        padding: 20px;
+    }
+
+    .GYMFORM-right {
+        padding: 20px;
+    }
+}
+
+@media (max-width: 480px) {
+    .GYMFORM-left h2 {
+        font-size: 1.6rem;
+    }
+
+    .GYMFORM-card {
+        padding: 20px;
+    }
+}

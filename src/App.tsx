@@ -18,6 +18,7 @@ import ResetPassword from "./components/ResetPassword";
 import ProductManagement from "./components/ProductManagement.js";
 import PWAInstallBanner from "./components/PWAInstallBanner.js";
 import MaintenancePage from "./components/MaintenancePage.js";
+import GymForm from "./components/GymForm.js";
 
 export type NavigationItem =
   | "dashboard"
@@ -37,11 +38,14 @@ export type NavigationItem =
 export type Theme = "light" | "dark";
 
 export default function App() {
+type AuthView = "login" | "signup";
+
+const [authView, setAuthView] = useState<AuthView>("login");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentPage, setCurrentPage] = useState<NavigationItem>("dashboard");
   const [theme, setTheme] = useState<Theme>("dark");
   const [loading, setLoading] = useState(true); // ⏳ to avoid flicker during auth check
-  const isMaintenanceMode = true;
+  const isMaintenanceMode = false;
   // ✅ Check if user is already logged in (token in localStorage)
   useEffect(() => {
     const token = authService.getToken();
@@ -119,7 +123,10 @@ export default function App() {
       className={`${theme === "dark" ? "dark" : ""} min-h-screen bg-background`}>
       <Toaster position="top-right" richColors closeButton />
       {!isAuthenticated ? (
-        <Login onLogin={handleLogin} />
+        <>
+          {authView === "login" && <Login onLogin={handleLogin} onNavigateSignup={() => setAuthView("signup")} />}
+          {authView === "signup" && <GymForm onLogin={() => setAuthView("login")} />}
+        </>
       ) : (
         <>
           <Layout

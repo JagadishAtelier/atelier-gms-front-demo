@@ -16,9 +16,10 @@ import authService from "../service/authService.js";
 
 interface LoginProps {
   onLogin: () => void;
+  onNavigateSignup: () => void;
 }
 
-export const Login: React.FC<LoginProps> = ({ onLogin }) => {
+export const Login: React.FC<LoginProps> = ({ onLogin, onNavigateSignup }) => {
   const [identifier, setIdentifier] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -215,14 +216,14 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
           // Forgot Password "page" (keeps same card design, white bg + black text)
           <Card className="border-border/50 shadow-2xl bg-white text-black">
             <CardHeader className="space-y-1">
-              <CardTitle className="text-center text-lg font-semibold" style={{color:"#fff"}}>Forgot Password</CardTitle>
+              <CardTitle className="text-center text-lg font-semibold" style={{ color: "#fff" }}>Forgot Password</CardTitle>
               <CardDescription className="text-center text-sm">Reset your account password</CardDescription>
             </CardHeader>
 
             <CardContent>
               {/* Back button at top */}
               <div className="mb-3">
-                <Button type="button" variant="ghost" onClick={closeForgot} className="px-2" style={{color:"#fff"}}>
+                <Button type="button" variant="ghost" onClick={closeForgot} className="px-2" style={{ color: "#fff" }}>
                   ← Back to Sign In
                 </Button>
               </div>
@@ -230,12 +231,12 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
               {fpStep === "email" ? (
                 <form onSubmit={handleRequestOtp} className="space-y-3">
                   <div>
-                    <Label htmlFor="fpEmail" style={{color:"#fff" ,marginBottom:"5px"}}>Registered Email</Label>
+                    <Label htmlFor="fpEmail" style={{ color: "#fff", marginBottom: "5px" }}>Registered Email</Label>
                     <Input
                       id="fpEmail"
                       type="email"
                       placeholder="you@example.com"
-                      style={{color:"#fff"}}
+                      style={{ color: "#fff" }}
                       value={fpEmail}
                       onChange={(e) => setFpEmail(e.target.value)}
                       required
@@ -246,7 +247,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                     <Button type="submit" className="flex-1" disabled={fpLoading}>
                       {fpLoading ? "Sending OTP..." : "Send OTP"}
                     </Button>
-                    <Button style={{color:"#fff"}} type="button" variant="ghost" onClick={closeForgot} className="flex-1">
+                    <Button style={{ color: "#fff" }} type="button" variant="ghost" onClick={closeForgot} className="flex-1">
                       Cancel
                     </Button>
                   </div>
@@ -259,16 +260,16 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   </div>
 
                   <div>
-                    <Label htmlFor="fpOtp" style={{color:"#fff"}}>OTP</Label>
-                    <Input id="fpOtp" style={{color:"#fff"}} value={fpOtp} onChange={(e) => setFpOtp(e.target.value)} required />
+                    <Label htmlFor="fpOtp" style={{ color: "#fff" }}>OTP</Label>
+                    <Input id="fpOtp" style={{ color: "#fff" }} value={fpOtp} onChange={(e) => setFpOtp(e.target.value)} required />
                   </div>
 
                   <div>
-                    <Label htmlFor="fpNewPassword" style={{color:"#fff"}}>New Password</Label>
+                    <Label htmlFor="fpNewPassword" style={{ color: "#fff" }}>New Password</Label>
                     <div className="relative">
                       <Input
                         id="fpNewPassword"
-                        style={{color:"#fff"}}
+                        style={{ color: "#fff" }}
                         type={showFpNewPassword ? "text" : "password"}
                         value={fpNewPassword}
                         onChange={(e) => setFpNewPassword(e.target.value)}
@@ -287,11 +288,11 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   </div>
 
                   <div>
-                    <Label style={{color:"#fff"}} htmlFor="fpConfirmPassword">Confirm Password</Label>
+                    <Label style={{ color: "#fff" }} htmlFor="fpConfirmPassword">Confirm Password</Label>
                     <div className="relative">
                       <Input
                         id="fpConfirmPassword"
-                        style={{color:"#fff"}}
+                        style={{ color: "#fff" }}
                         type={showFpConfirmPassword ? "text" : "password"}
                         value={fpConfirmPassword}
                         onChange={(e) => setFpConfirmPassword(e.target.value)}
@@ -313,7 +314,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                     <Button type="submit" className="flex-1" disabled={fpLoading}>
                       {fpLoading ? "Resetting..." : "Reset Password"}
                     </Button>
-                    <Button style={{color:"#fff"}} type="button" variant="ghost" onClick={() => { setFpStep("email"); setFpOtpToken(null); }}>
+                    <Button style={{ color: "#fff" }} type="button" variant="ghost" onClick={() => { setFpStep("email"); setFpOtpToken(null); }}>
                       Request New OTP
                     </Button>
                   </div>
@@ -403,7 +404,15 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   >
                     Forgot password?
                   </button>
-                  <span className="text-muted-foreground">Use your registered email</span>
+                  <p className="text-center text-sm !mt-6">
+                    Don't have an account?{" "}
+                    <span
+                      onClick={onNavigateSignup}
+                      className="!text-red-600 font-medium cursor-pointer hover:underline"
+                    >
+                      Sign Up
+                    </span>
+                  </p>
                 </div>
               </form>
             </CardContent>
@@ -414,12 +423,12 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
           Use your registered email or phone to log in.
         </p>
         <footer className="text-center mt-6 text-xs text-muted-foreground">
-          © 2025 Flex Culture Powered by <a href="https://ateliertechnologysolutions.com/">Atelier technologies</a> 
+          © 2025 Flex Culture Powered by <a href="https://ateliertechnologysolutions.com/">Atelier technologies</a>
         </footer>
       </div>
-      
+
     </div>
-    
+
   );
 };
 
