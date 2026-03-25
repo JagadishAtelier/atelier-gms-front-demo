@@ -19,7 +19,7 @@ import ProductManagement from "./components/ProductManagement.js";
 import PWAInstallBanner from "./components/PWAInstallBanner.js";
 import MaintenancePage from "./components/MaintenancePage.js";
 import GymForm from "./components/GymForm.js";
-
+import DemoExpired from "./components/DemoExpired.js";
 export type NavigationItem =
   | "dashboard"
   | "member-dashboard"
@@ -42,18 +42,26 @@ type AuthView = "login" | "signup";
 
 const [authView, setAuthView] = useState<AuthView>("login");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isDemoExpired, setIsDemoExpired] = useState(false);
   const [currentPage, setCurrentPage] = useState<NavigationItem>("dashboard");
   const [theme, setTheme] = useState<Theme>("dark");
   const [loading, setLoading] = useState(true); // ⏳ to avoid flicker during auth check
   const isMaintenanceMode = false;
   // ✅ Check if user is already logged in (token in localStorage)
-  useEffect(() => {
-    const token = authService.getToken();
-    if (token) {
-      setIsAuthenticated(true);
-    }
-    setLoading(false);
-  }, []);
+useEffect(() => {
+  const token = authService.getToken();
+  const expired = localStorage.getItem("demo_expired") === "true";
+
+  if (expired) {
+    setIsDemoExpired(true);
+  } else if (token) {
+    setIsAuthenticated(true);
+  }
+
+  setLoading(false);
+}, []);
+
+  
 
   // ✅ Load saved theme
   useEffect(() => {
@@ -117,7 +125,15 @@ const [authView, setAuthView] = useState<AuthView>("login");
       </div>
     );
   }
-  if (isMaintenanceMode) return <MaintenancePage />;
+// 1️⃣ Highest priority → Maintenance Mode
+if (isMaintenanceMode) {
+  return <MaintenancePage />;
+}
+
+// 2️⃣ Next → Demo Expired
+if (isDemoExpired) {
+  return <DemoExpired />;
+}
   return (
     <div
       className={`${theme === "dark" ? "dark" : ""} min-h-screen bg-background`}>

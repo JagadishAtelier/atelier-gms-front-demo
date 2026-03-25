@@ -21,6 +21,7 @@ import {
   Settings as SettingsIcon,
   Rocket,
   ShoppingBag,
+  Timer,
 } from "lucide-react";
 import gymService from "../service/gymService.js";
 import { toast } from "sonner";
@@ -38,7 +39,7 @@ const navigationItems = [
   { id: "dashboard" as NavigationItem, label: "Dashboard", icon: LayoutDashboard },
   { id: "member-dashboard" as NavigationItem, label: "Member Dashboard", icon: Dumbbell },
   { id: "member-workoutplans" as NavigationItem, label: "Workout Plans", icon: BicepsFlexed },
-  { id: "reset-password" as NavigationItem, label: "Reset Password", icon: SquareAsterisk }, 
+  { id: "reset-password" as NavigationItem, label: "Reset Password", icon: SquareAsterisk },
   { id: "member-renewal" as NavigationItem, label: "Renewal", icon: IndianRupee },
   { id: "members" as NavigationItem, label: "Members", icon: Users },
   { id: "invoices" as NavigationItem, label: "Invoices", icon: FileText },
@@ -58,7 +59,7 @@ export function Layout({
   onThemeToggle,
 }: LayoutProps) {
   const [collapsed, setCollapsed] = useState<boolean>(false);
-
+  const [tokenTimeLeft, setTokenTimeLeft] = useState<string>("");
   // Gym name state (fetched from API). Default to static fallback.
   const [gymName, setGymName] = useState<string>("Atelier Fit");
   const [gymLoading, setGymLoading] = useState(false);
@@ -155,7 +156,11 @@ export function Layout({
       return navigationItems.filter((it) => allowed.has(it.id));
     }
     if (roleNorm === "super admin") {
-      const allowed = new Set(["dashboard", "members", "invoices", "plans","product", "membership", "settings"]);
+      const allowed = new Set(["dashboard", "members", "invoices", "plans", "product", "membership", "settings"]);
+      return navigationItems.filter((it) => allowed.has(it.id));
+    }
+    if (roleNorm === "admin") {
+      const allowed = new Set(["dashboard", "members", "member-renewal", "reset-password", "invoices", "plans", "product", "membership", "communication", "settings"]);
       return navigationItems.filter((it) => allowed.has(it.id));
     }
     // Super Admin or any other role - show full menu
@@ -182,6 +187,42 @@ export function Layout({
     }
     // only re-run when role, visibleItems or currentPage changes
   }, [role, visibleItems, currentPage, onNavigate]);
+
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    try {
+      const base64Url = token.split(".")[1];
+      const decoded = JSON.parse(atob(base64Url));
+
+      const interval = setInterval(() => {
+        const now = Math.floor(Date.now() / 1000);
+        const timeLeft = decoded.exp - now;
+
+        if (timeLeft <= 0) {
+          setTokenTimeLeft("Expired ❌");
+          clearInterval(interval);
+
+          // optional auto logout
+          localStorage.removeItem("token");
+          // onLogout(); // uncomment if needed
+
+          return;
+        }
+
+        const hours = Math.floor(timeLeft / 3600);
+        const minutes = Math.floor((timeLeft % 3600) / 60);
+        const seconds = timeLeft % 60;
+
+        setTokenTimeLeft(`${hours}h ${minutes}m ${seconds}s`);
+      }, 1000);
+
+      return () => clearInterval(interval);
+    } catch (err) {
+      console.error("Invalid token");
+    }
+  }, []);
 
   const Sidebar = ({ mobile = false, collapsed: sideCollapsed = false }: { mobile?: boolean; collapsed?: boolean }) => (
     <div className={`flex-col h-full bg-card border-r border-border ${mobile ? "" : "md:flex"} ${mobile ? "" : "flex"}`}>
@@ -297,7 +338,10 @@ export function Layout({
             </Button>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-medium text-white flex items-center gap-1">
+              <Timer size={20}/> {tokenTimeLeft}
+            </span>
             <Button
               variant="ghost"
               size="sm"
@@ -312,8 +356,8 @@ export function Layout({
 
         {/* Page Content */}
         <main className="flex-1 overflow-auto p-6 bg-background dark:bg-black text-foreground">
-  {children}
-</main>
+          {children}
+        </main>
 
         {/* Mobile Bottom Nav */}
         <div className="md:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-border p-2 z-50">

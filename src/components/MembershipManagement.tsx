@@ -443,7 +443,7 @@ export function MembershipManagement() {
       toast.success('Image uploaded');
     } catch (err: any) {
       console.error('Image upload failed', err);
-      toast.error(err?.message || 'Image upload failed');
+      // toast.error(err?.message || 'Image upload failed');
     } finally {
       setImageUploading(false);
     }

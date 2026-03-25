@@ -11,6 +11,7 @@ import {
 import { Badge } from "./ui/badge";
 import { toast } from "sonner";
 import { Users, Calendar, DollarSign, TrendingUp, AlertTriangle, Clipboard } from "lucide-react";
+import { jwtDecode } from "jwt-decode";
 import {
   BarChart,
   Bar,
@@ -38,7 +39,41 @@ const SHOW_TOAST_ON_UPDATE = true; // set false to suppress toasts when backgrou
 function useDevice() {
   const isBrowser = typeof window !== "undefined";
   const [width, setWidth] = useState<number>(isBrowser ? window.innerWidth : 1024);
+useEffect(() => {
+  const token = localStorage.getItem("token");
 
+  if (token) {
+    try {
+      const decoded = jwtDecode(token);
+
+      console.log("Decoded JWT:", decoded);
+
+      // 🔥 Convert exp & iat to readable date
+      if (decoded.exp) {
+        const expiryDate = new Date(decoded.exp * 1000);
+        console.log("Token Expiry Time:", expiryDate.toLocaleString());
+      }
+
+      if (decoded.iat) {
+        const issuedDate = new Date(decoded.iat * 1000);
+        console.log("Token Issued Time:", issuedDate.toLocaleString());
+      }
+
+      // 🔥 Check if expired
+      const currentTime = Date.now() / 1000;
+      if (decoded.exp < currentTime) {
+        console.log("❌ Token is expired");
+      } else {
+        console.log("✅ Token is valid");
+      }
+
+    } catch (err) {
+      console.error("Invalid token:", err);
+    }
+  } else {
+    console.log("No token found");
+  }
+}, []);
   useEffect(() => {
     if (!isBrowser) return;
     const handler = () => setWidth(window.innerWidth);

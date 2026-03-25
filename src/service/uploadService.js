@@ -8,7 +8,7 @@ const handleImageUpload = async (file) => {
   const formData = new FormData();
   formData.append("image", file);
 
-  const response = await axios.post(`${BASE_API}/gms/upload`, formData, {
+  const response = await axios.post(`${BASE_API}/gms/uploads`, formData, {
     headers: {
       "Content-Type": "multipart/form-data",
     },

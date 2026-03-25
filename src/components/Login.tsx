@@ -104,6 +104,16 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onNavigateSignup }) => {
 
     try {
       const response = await authService.login(identifier, password);
+      // 🚨 Handle demo expired
+      if (response?.demoExpired) {
+        localStorage.setItem("demo_expired", "true");
+        toast.error("Demo expired");
+        window.location.reload(); // trigger App to re-check state
+        return;
+      }
+
+      // Normal login
+      localStorage.removeItem("demo_expired");
       toast.success(`Welcome, ${response?.user?.username || "User"}!`);
       onLogin();
     } catch (error: any) {

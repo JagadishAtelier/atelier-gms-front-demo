@@ -78,6 +78,7 @@ export function Membership() {
       const response = await membershipService.getMemberships();
       const list = response?.data?.data ?? response?.data ?? response ?? [];
       const arr = Array.isArray(list) ? list : [];
+      console.log(arr)
       setMemberships(arr);
     } catch (err: any) {
       toast.error(err?.message || "Failed to load memberships");
